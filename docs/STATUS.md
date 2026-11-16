@@ -2,7 +2,7 @@
 
 ## Phase 2 — Leads and pipeline (2026-11-16)
 
-**Gate result: passes locally; CI result recorded below once the push has run.**
+**Gate result: pass on GitHub Actions** — [CI run 43873830195](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/43873830195) (lint, types, unit tests with coverage, build, integration and cross-tenant suite including the 10k-lead p95 check, linux/arm64 images) and [E2E run 43873830255](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/43873830255) (leads, board and sample-data flows against a fresh no-secrets Compose stack, desktop and phone).
 
 | Gate check                                      | Result                     | How it was run                                                                                                                                     |
 | ----------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |

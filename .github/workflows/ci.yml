@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types, unit tests, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build packages and apps (production build)
+        run: pnpm turbo run build
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm turbo run typecheck
+      - name: Unit tests, with the 80% line coverage gate on packages/domain
+        run: pnpm turbo run test
+
+  integration:
+    name: Integration and cross-tenant suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter=@datoflow/api...
+      - name: Integration tests (Testcontainers Postgres and Redis)
+        run: pnpm test:integration
+
+  images:
+    name: Docker images (linux/arm64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    needs: check
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build api, worker and web for arm64
+        run: |
+          for target in api worker web; do
+            docker buildx build --platform linux/arm64 -f infra/Dockerfile --target "$target" \
+              --cache-from type=gha,scope=$target --cache-to type=gha,mode=max,scope=$target .
+          done

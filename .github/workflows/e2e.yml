@@ -1,0 +1,50 @@
+name: E2E
+
+# The full browser suite runs on main and on pull requests labelled `e2e`, to stay inside the
+# free 2,000 Actions minutes a month.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Every browser in the run shares one IP, so the auth limit is raised for the stack under test.
+      RATE_LIMIT_AUTH_PER_MIN: '500'
+      E2E_BASE_URL: http://localhost:3000
+      MAILPIT_URL: http://localhost:8025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+          cache: pnpm
+      - name: Start the stack exactly as a fresh clone would, with no secrets
+        run: docker compose -f infra/docker-compose.yml up -d --build --wait --wait-timeout 300
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @datoflow/tests exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --no-color --tail=300
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: tests/playwright-report
+          retention-days: 7

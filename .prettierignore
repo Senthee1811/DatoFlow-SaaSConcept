@@ -1,0 +1,13 @@
+node_modules
+dist
+.next
+.turbo
+coverage
+pnpm-lock.yaml
+packages/db/src/generated
+packages/db/prisma/migrations
+.claude
+docs/MASTER_PROMPT.md
+test-results
+playwright-report
+next-env.d.ts

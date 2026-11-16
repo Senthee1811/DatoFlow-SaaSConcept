@@ -1,0 +1,121 @@
+# Local stack. Runs on a fresh clone with no accounts and no secrets:
+#   docker compose -f infra/docker-compose.yml up --build
+# Then open http://localhost:3000. Emails (verification, invitations) land in Mailpit at http://localhost:8025.
+# API docs: http://localhost:4000/v1/docs
+#
+# Every value below has a local-only default. Override any of them with environment variables.
+# Postgres and Redis publish no host ports.
+
+name: datoflow
+
+x-server-env: &server-env
+  NODE_ENV: production
+  APP_URL: ${APP_URL:-http://localhost:3000}
+  API_URL: http://api:4000
+  DATABASE_URL: postgresql://datoflow:datoflow@postgres:5432/datoflow
+  REDIS_URL: redis://redis:6379
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+  SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LWRldi1vbmx5LWtleS0wMTIzNDU=}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+  SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+  EMAIL_FROM: ${EMAIL_FROM:-DatoFlow <no-reply@datoflow.local>}
+  RATE_LIMIT_AUTH_PER_MIN: ${RATE_LIMIT_AUTH_PER_MIN:-5}
+  RATE_LIMIT_API_PER_MIN: ${RATE_LIMIT_API_PER_MIN:-300}
+  CAPTCHA_PROVIDER: noop
+  STORAGE_PROVIDER: local
+  BILLING_PROVIDER: noop
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: datoflow
+      POSTGRES_PASSWORD: datoflow
+      POSTGRES_DB: datoflow
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U datoflow -d datoflow']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'everysec']
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    ports:
+      - '127.0.0.1:8025:8025'
+
+  migrate:
+    build: &build
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: api
+    image: datoflow-api:local
+    command: ['sh', '-c', 'cd packages/db && ./node_modules/.bin/prisma migrate deploy']
+    environment:
+      DATABASE_URL: postgresql://datoflow:datoflow@postgres:5432/datoflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    image: datoflow-api:local
+    build: *build
+    environment: *server-env
+    ports:
+      - '127.0.0.1:${API_HOST_PORT:-4000}:4000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: worker
+    image: datoflow-worker:local
+    environment: *server-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: web
+    image: datoflow-web:local
+    environment:
+      API_URL: http://api:4000
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    ports:
+      - '${WEB_HOST_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres:
+  redis:

@@ -1,0 +1,228 @@
+/**
+ * NFR-SEC-01 cross-tenant suite, generated from the OpenAPI document.
+ *
+ * - Every route with `{orgId}` is called by the Owner of organization A with organization B's id,
+ *   for every method, and must return 404.
+ * - Every route with another id parameter must have a case below that uses organization A's
+ *   path with an id from organization B, and must also return 404.
+ * - Every route without `{orgId}` must have a case below that shows why it cannot leak.
+ * A route with no applicable case fails the suite, so new routes cannot ship untested.
+ */
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  addMember,
+  Client,
+  createOrg,
+  invite,
+  setPlan,
+  signUp,
+  startApp,
+  type TestApp,
+} from './harness.js';
+
+type Op = { method: string; path: string };
+
+interface World {
+  a: { owner: Client; orgId: string; userId: string };
+  b: {
+    owner: Client;
+    orgId: string;
+    name: string;
+    memberId: string;
+    memberUserId: string;
+    invitationId: string;
+    invitationToken: string;
+  };
+}
+
+let app: TestApp;
+let world: World;
+let operations: Op[];
+
+function fill(path: string, params: Record<string, string>) {
+  return path.replace(/\{(\w+)\}/g, (_, name: string) => {
+    const value = params[name];
+    if (!value) throw new Error(`No value for {${name}} in ${path}`);
+    return value;
+  });
+}
+
+async function call(client: Client, op: Op, params: Record<string, string>) {
+  const url = fill(op.path, params);
+  const body = op.method === 'GET' || op.method === 'DELETE' ? undefined : {};
+  return client.request(op.method, url, body);
+}
+
+/** Cases for routes with an id parameter other than orgId: A's path, B's id. */
+const NESTED: Record<string, (w: World, op: Op) => Promise<void>> = {
+  'PATCH /v1/orgs/{orgId}/members/{memberId}': async (w, op) => {
+    const res = await w.a.owner.request(
+      op.method,
+      fill(op.path, { orgId: w.a.orgId, memberId: w.b.memberId }),
+      { role: 'OWNER' },
+    );
+    expect(res.status).toBe(404);
+    const { rows } = await app.sql.query(
+      'SELECT role FROM "OrganizationMembership" WHERE id = $1',
+      [w.b.memberId],
+    );
+    expect(rows[0].role).toBe('REP');
+  },
+  'DELETE /v1/orgs/{orgId}/members/{memberId}': async (w, op) => {
+    const res = await w.a.owner.request(
+      op.method,
+      fill(op.path, { orgId: w.a.orgId, memberId: w.b.memberId }),
+    );
+    expect(res.status).toBe(404);
+    const { rows } = await app.sql.query('SELECT id FROM "OrganizationMembership" WHERE id = $1', [
+      w.b.memberId,
+    ]);
+    expect(rows).toHaveLength(1);
+  },
+  'POST /v1/orgs/{orgId}/invitations/{invitationId}/resend': async (w, op) => {
+    const res = await w.a.owner.post(
+      fill(op.path, { orgId: w.a.orgId, invitationId: w.b.invitationId }),
+    );
+    expect(res.status).toBe(404);
+  },
+  'POST /v1/orgs/{orgId}/invitations/{invitationId}/revoke': async (w, op) => {
+    const res = await w.a.owner.post(
+      fill(op.path, { orgId: w.a.orgId, invitationId: w.b.invitationId }),
+    );
+    expect(res.status).toBe(404);
+    const { rows } = await app.sql.query('SELECT status FROM "Invitation" WHERE id = $1', [
+      w.b.invitationId,
+    ]);
+    expect(rows[0].status).toBe('PENDING');
+  },
+};
+
+/** Cases for routes without {orgId}. Each shows why the route cannot reach another tenant. */
+const UNSCOPED: Record<string, (w: World, op: Op) => Promise<void>> = {
+  'GET /v1/me': async (w) => {
+    const res = await w.a.owner.get('/v1/me');
+    expect(res.body.id).toBe(w.a.userId);
+  },
+  'GET /v1/orgs': async (w) => {
+    const res = await w.a.owner.get('/v1/orgs');
+    const ids = res.body.items.map((o: { id: string }) => o.id);
+    expect(ids).toContain(w.a.orgId);
+    expect(ids).not.toContain(w.b.orgId);
+  },
+  'POST /v1/orgs': async (w) => {
+    // Creating an organization cannot name an existing one: unknown fields such as `id` are refused.
+    const res = await w.a.owner.post('/v1/orgs', {
+      id: w.b.orgId,
+      name: 'Hijack',
+      slug: 'hijack-x',
+      timezone: 'UTC',
+      currency: 'USD',
+    });
+    expect(res.status).toBe(422);
+  },
+  // Invitation tokens are bearer secrets held by the invitee, not tenant ids.
+  'GET /v1/invitations/{token}': async (w) => {
+    const guessed = await w.a.owner.get(`/v1/invitations/${'A'.repeat(43)}`);
+    expect(guessed.status).toBe(404);
+    expect((await w.a.owner.get('/v1/invitations/not-a-token')).status).toBe(404);
+  },
+  'POST /v1/invitations/{token}/accept': async (w) => {
+    // Even holding organization B's token, A's owner is not the invitee and cannot join.
+    const res = await w.a.owner.post(`/v1/invitations/${w.b.invitationToken}/accept`);
+    expect(res.status).toBe(409);
+    expect(res.body.reason).toBe('EMAIL_MISMATCH');
+    expect((await w.a.owner.get(`/v1/orgs/${w.b.orgId}`)).status).toBe(404);
+  },
+};
+
+beforeAll(async () => {
+  app = await startApp();
+  const ownerA = await signUp(app, 'tenant-a');
+  const orgA = await createOrg(ownerA.client, 'tenanta');
+  const ownerB = await signUp(app, 'tenant-b');
+  const orgB = await createOrg(ownerB.client, 'tenantb');
+  await setPlan(app, orgB.id, 'starter');
+  const memberB = await addMember(app, ownerB.client, orgB.id, 'REP', 'tenant-b-rep');
+  const pending = await invite(app, ownerB.client, orgB.id, 'pending-b@example.test', 'MANAGER');
+  world = {
+    a: { owner: ownerA.client, orgId: orgA.id, userId: ownerA.userId },
+    b: {
+      owner: ownerB.client,
+      orgId: orgB.id,
+      name: orgB.name,
+      memberId: memberB.membershipId,
+      memberUserId: memberB.userId,
+      invitationId: pending.invitation.id,
+      invitationToken: pending.token,
+    },
+  };
+  const doc = (await new Client(app).get('/v1/openapi.json')).body as {
+    paths: Record<string, Record<string, unknown>>;
+  };
+  operations = Object.entries(doc.paths).flatMap(([path, methods]) =>
+    Object.keys(methods).map((method) => ({ method: method.toUpperCase(), path })),
+  );
+});
+afterAll(() => app.close());
+
+describe('NFR-SEC-01 cross-tenant suite', () => {
+  it('NFR-SEC-01: every route in the OpenAPI document has a cross-tenant case', () => {
+    expect(operations.length).toBeGreaterThan(10);
+    const missing = operations
+      .map((op) => `${op.method} ${op.path}`)
+      .filter((key) => {
+        const params = [...key.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+        if (!params.includes('orgId')) return !(key in UNSCOPED);
+        const nested = params.filter((p) => p !== 'orgId');
+        return nested.length > 0 && !(key in NESTED);
+      });
+    expect(missing, 'Add a case for these routes').toEqual([]);
+    const stale = [...Object.keys(NESTED), ...Object.keys(UNSCOPED)].filter(
+      (key) => !operations.some((op) => `${op.method} ${op.path}` === key),
+    );
+    expect(stale, 'These cases name routes that no longer exist').toEqual([]);
+  });
+
+  it("NFR-SEC-01: every {orgId} route returns 404 for another organization's id", async () => {
+    const scoped = operations.filter((op) => op.path.includes('{orgId}'));
+    const failures: string[] = [];
+    for (const op of scoped) {
+      const params: Record<string, string> = {
+        orgId: world.b.orgId,
+        memberId: world.b.memberId,
+        invitationId: world.b.invitationId,
+      };
+      const res = await call(world.a.owner, op, params);
+      if (res.status !== 404) failures.push(`${op.method} ${op.path} → ${res.status}`);
+    }
+    expect(failures).toEqual([]);
+    const { rows } = await app.sql.query('SELECT name FROM "Organization" WHERE id = $1', [
+      world.b.orgId,
+    ]);
+    expect(rows[0].name).toBe(world.b.name);
+  });
+
+  it("NFR-SEC-01: routes with a nested id return 404 for another organization's record", async () => {
+    for (const op of operations) {
+      const key = `${op.method} ${op.path}`;
+      if (key in NESTED) await NESTED[key]!(world, op);
+    }
+  });
+
+  it('NFR-SEC-01: routes without {orgId} cannot reach another organization', async () => {
+    for (const op of operations) {
+      const key = `${op.method} ${op.path}`;
+      if (key in UNSCOPED) await UNSCOPED[key]!(world, op);
+    }
+  });
+
+  it("NFR-SEC-01: organization A's audit log holds no rows from organization B", async () => {
+    const res = await world.a.owner.get(`/v1/orgs/${world.a.orgId}/audit-logs?limit=100`);
+    expect(res.status).toBe(200);
+    const leaked = res.body.items.filter(
+      (e: { targetId: string | null }) =>
+        e.targetId === world.b.orgId || e.targetId === world.b.invitationId,
+    );
+    expect(leaked).toEqual([]);
+  });
+});

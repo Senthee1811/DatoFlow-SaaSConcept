@@ -1,0 +1,14 @@
+node_modules
+dist
+.next
+.turbo
+coverage
+.env
+.env.local
+*.tsbuildinfo
+packages/db/src/generated
+test-results
+playwright-report
+.DS_Store
+apps/web/public/fonts/*.woff2
+apps/web/next-env.d.ts

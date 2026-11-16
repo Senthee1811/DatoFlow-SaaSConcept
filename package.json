@@ -1,0 +1,30 @@
+{
+  "name": "datoflow",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "turbo run test",
+    "test:integration": "pnpm --filter @datoflow/tests run integration",
+    "test:e2e": "pnpm --filter @datoflow/tests run e2e",
+    "db:migrate": "pnpm --filter @datoflow/db run migrate:deploy",
+    "dev": "turbo run dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.15.0",
+    "globals": "17.14.0",
+    "prettier": "3.10.1",
+    "turbo": "2.11.11",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2"
+  }
+}

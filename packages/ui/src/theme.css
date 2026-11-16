@@ -1,0 +1,162 @@
+/*
+ * Caldera — DatoFlow's design system.
+ * Forge fire on warm limestone. Flat and shadowless. Only three chromatic colours.
+ * Components use these tokens through utilities and never write raw hex values.
+ */
+
+@theme {
+  --color-*: initial;
+  --color-ember: #fc5000; /* primary actions, featured stat cards, "needs attention" */
+  --color-plasma-violet: #524ae9; /* hero halftone and one accent card only; never controls */
+  --color-sulfur: #f5f28e; /* tags, badges, small highlight washes */
+  --color-limestone: #f7f6f2; /* cards, content blocks, secondary fills */
+  --color-pumice: #e2e2df; /* page canvas */
+  --color-obsidian: #070607; /* text, headings, borders */
+  --color-chalk: #ffffff; /* text on dark sections only */
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-display:
+    var(--font-display-face), 'PP Neue Corp Compact', 'Anton', 'Bebas Neue', sans-serif;
+  --font-body: var(--font-body-face), 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-caption: ui-sans-serif, system-ui, sans-serif;
+
+  --text-caption: 12px;
+  --leading-caption: 1.2;
+  --text-caption--line-height: 1.2;
+  --text-body-sm: 14px;
+  --leading-body-sm: 1.2;
+  --text-body-sm--line-height: 1.2;
+  --text-body: 16px;
+  --leading-body: 1.55;
+  --text-body--line-height: 1.55;
+  --text-subheading: 26px;
+  --leading-subheading: 1.2;
+  --text-subheading--line-height: 1.2;
+  --text-heading-sm: 30px;
+  --leading-heading-sm: 1.5;
+  --text-heading-sm--line-height: 1.5;
+  --text-heading: 32px;
+  --leading-heading: 1;
+  --text-heading--line-height: 1;
+  --text-heading-lg: 48px;
+  --leading-heading-lg: 1;
+  --text-heading-lg--line-height: 1;
+  --text-heading-2xl: 80px;
+  --leading-heading-2xl: 1.1;
+  --text-heading-2xl--line-height: 1.1;
+  --text-heading-3xl: 96px;
+  --leading-heading-3xl: 0.95;
+  --text-heading-3xl--line-height: 0.95;
+  --text-display: 189px;
+  --leading-display: 0.94;
+  --text-display--line-height: 0.94;
+
+  --radius-small: 16px;
+  --radius-medium: 20px;
+  --radius-cards: 40px;
+  --radius-buttons: 40px;
+  --radius-inputs: 100px;
+  --radius-pills: 800px;
+
+  /* No shadows anywhere. Layering is Pumice canvas → Limestone cards → Ember features. */
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+
+  --container-page: 1280px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    background-color: var(--color-pumice);
+    color: var(--color-obsidian);
+    font-family: var(--font-body);
+    font-weight: 500;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    min-height: 100dvh;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+  }
+
+  /* Every interactive element gets a visible 2px Obsidian focus ring with a 2px offset. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-obsidian);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-sulfur);
+    color: var(--color-obsidian);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0ms !important;
+      animation-duration: 0ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Display type always tracks at 0.02em, never negative. */
+  .display {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    font-feature-settings: 'ss06', 'ss10';
+  }
+
+  .caption {
+    font-family: var(--font-caption);
+    font-size: var(--text-caption);
+    line-height: var(--leading-caption);
+    font-weight: 400;
+  }
+
+  /* Dividers are 1.5px dotted Obsidian. Not dashed, not solid. */
+  .divider {
+    border: 0;
+    border-top: 1.5px dotted var(--color-obsidian);
+  }
+
+  /* Signature motif: orange dots on a violet-to-orange gradient, 40px radius. */
+  .halftone {
+    border-radius: var(--radius-cards);
+    background-color: var(--color-plasma-violet);
+    background-image:
+      radial-gradient(circle at center, var(--color-ember) 0 38%, transparent 40%),
+      linear-gradient(160deg, var(--color-plasma-violet) 10%, var(--color-ember) 95%);
+    background-size:
+      14px 14px,
+      100% 100%;
+    background-position:
+      0 0,
+      0 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* The dots grow toward the bottom edge, like a print screen catching light. */
+  .halftone::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle at center, var(--color-ember) 0 22%, transparent 24%);
+    background-size: 14px 14px;
+    background-position: 7px 7px;
+    mask-image: linear-gradient(to bottom, transparent 15%, black 85%);
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

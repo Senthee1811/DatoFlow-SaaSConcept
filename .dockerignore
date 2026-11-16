@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+.git
+.env
+.claude
+docs
+tests
+!tests/package.json
+packages/db/src/generated

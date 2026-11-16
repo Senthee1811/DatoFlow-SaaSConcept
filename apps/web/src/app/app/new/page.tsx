@@ -9,10 +9,17 @@ import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 import { api, ApiProblem, problemMessage } from '@/lib/api';
 import { authClient } from '@/lib/auth-client';
-import { CURRENCIES, DEFAULT_CURRENCY, DEFAULT_TIMEZONE, TIMEZONES, slugify } from '@/lib/options';
+import {
+  COUNTRIES,
+  CURRENCIES,
+  DEFAULT_CURRENCY,
+  DEFAULT_TIMEZONE,
+  TIMEZONES,
+  slugify,
+} from '@/lib/options';
 
 type Values = z.input<typeof createOrgSchema>;
-const FIELDS = ['name', 'slug', 'timezone', 'currency'] as const;
+const FIELDS = ['name', 'slug', 'timezone', 'currency', 'country'] as const;
 
 export default function NewOrgPage() {
   const router = useRouter();
@@ -20,7 +27,14 @@ export default function NewOrgPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const form = useForm<Values, unknown, z.output<typeof createOrgSchema>>({
     resolver: zodResolver(createOrgSchema),
-    defaultValues: { name: '', slug: '', timezone: DEFAULT_TIMEZONE, currency: DEFAULT_CURRENCY },
+    defaultValues: {
+      name: '',
+      slug: '',
+      timezone: DEFAULT_TIMEZONE,
+      currency: DEFAULT_CURRENCY,
+      country: 'LK',
+      withSampleData: true,
+    },
   });
   const { errors, isSubmitting } = form.formState;
   const name = form.register('name');
@@ -103,6 +117,33 @@ export default function NewOrgPage() {
                 </Select>
               </Field>
             </div>
+            <Field
+              label="Country"
+              hint="Phone numbers without a country code are read as this country"
+              error={errors.country?.message}
+            >
+              <Select {...form.register('country')}>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-medium bg-pumice px-5 py-4">
+              <input
+                type="checkbox"
+                className="mt-1 size-5 accent-obsidian"
+                {...form.register('withSampleData')}
+              />
+              <span>
+                Start with sample data
+                <span className="block text-body-sm text-obsidian/75">
+                  A fictional agency with 60 leads and 3 reps, so you can try things safely. Delete
+                  it in one click
+                </span>
+              </span>
+            </label>
             {error ? (
               <p role="alert" className="rounded-medium bg-sulfur px-5 py-3 text-body-sm">
                 {error}

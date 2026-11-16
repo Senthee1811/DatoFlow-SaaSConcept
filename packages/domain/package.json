@@ -19,5 +19,9 @@
     "@vitest/coverage-v8": "5.1.0",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
-  }
+  },
+  "dependencies": {
+    "libphonenumber-js": "1.13.16"
+  },
+  "sideEffects": false
 }

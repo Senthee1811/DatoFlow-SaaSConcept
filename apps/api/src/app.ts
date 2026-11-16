@@ -34,6 +34,9 @@ import {
 } from './orgs/invitations.controller.js';
 import { MembersController } from './orgs/members.controller.js';
 import { OrgsController } from './orgs/orgs.controller.js';
+import { WorkspaceController } from './orgs/workspace.controller.js';
+import { LeadsController } from './leads/leads.controller.js';
+import { LossReasonsController, PipelinesController } from './leads/pipelines.controller.js';
 import { AUTH, DB, EMAIL, ENV, LOGGER, REDIS } from './tokens.js';
 
 export interface AppDeps {
@@ -79,6 +82,10 @@ class AppModule {
         OrgInvitationsController,
         InvitationTokenController,
         AuditController,
+        WorkspaceController,
+        LeadsController,
+        PipelinesController,
+        LossReasonsController,
       ],
       providers: [
         { provide: ENV, useValue: deps.env },

@@ -168,12 +168,19 @@ export async function signUp(
   return { client, email, userId: me.body.id };
 }
 
-export async function createOrg(client: Client, label: string) {
+/** Creates an organization. Sample data is off unless a test asks for it, to keep tests fast. */
+export async function createOrg(
+  client: Client,
+  label: string,
+  options: { sample?: boolean; country?: string } = {},
+) {
   const res = await client.post('/v1/orgs', {
     name: `${label} Agency`,
     slug: uniqueSlug(label),
     timezone: 'Asia/Colombo',
     currency: 'LKR',
+    country: options.country ?? 'LK',
+    withSampleData: options.sample ?? false,
   });
   if (res.status !== 201)
     throw new Error(`create org failed: ${res.status} ${JSON.stringify(res.body)}`);

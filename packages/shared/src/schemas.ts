@@ -33,17 +33,33 @@ export const idParam = z
   .max(64)
   .regex(/^[A-Za-z0-9_-]+$/);
 
-export const createOrgSchema = z.strictObject({ name, slug, timezone, currency });
+const country = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{2}$/, 'Use a two-letter country code');
+
+export const createOrgSchema = z.strictObject({
+  name,
+  slug,
+  timezone,
+  currency,
+  country: country.default('LK'),
+  /** Fill the new workspace with the sample agency (ORG-04). On by default. */
+  withSampleData: z.boolean().default(true),
+});
 export type CreateOrgInput = z.infer<typeof createOrgSchema>;
 
 export const orgSettingsSchema = z.strictObject({
   /** Role table footnote: off by default. */
   repsCanSeeAllLeads: z.boolean().optional(),
+  /** PIPE-03: Won needs a deal value. On by default. */
+  wonRequiresDealValue: z.boolean().optional(),
 });
 export type OrgSettings = z.infer<typeof orgSettingsSchema>;
 
 export const updateOrgSchema = z
-  .strictObject({ name, timezone, currency, settings: orgSettingsSchema })
+  .strictObject({ name, timezone, currency, country, settings: orgSettingsSchema })
   .partial()
   .refine((v) => Object.keys(v).length > 0, 'Send at least one field');
 export type UpdateOrgInput = z.infer<typeof updateOrgSchema>;
@@ -78,8 +94,10 @@ export interface OrgDto {
   slug: string;
   timezone: string;
   currency: string;
+  country: string;
   planCode: string;
   settings: OrgSettings;
+  hasSampleData: boolean;
   role: Role;
   createdAt: string;
 }
@@ -90,6 +108,7 @@ export interface MemberDto {
   name: string;
   email: string;
   role: Role;
+  isSample: boolean;
   joinedAt: string;
 }
 

@@ -27,3 +27,26 @@ One line each, newest at the bottom.
 - 2026-11-16 — Local Compose sends email through SMTP to Mailpit (not the console adapter), so verification and invitation links can be clicked at http://localhost:8025. `.env.example` keeps `console` for running the API outside Docker.
 - 2026-11-16 — pnpm 12 blocks dependency install scripts by default. Prisma's are allowed; the optional native extras (`msgpackr-extract`, `ssh2`, `cpu-features`, `protobufjs`, `@scarf/scarf`) are denied, which keeps ARM builds free of a compiler toolchain.
 - 2026-11-16 — Integration tests run against the compiled API (`apps/api/dist`), so the code under test is what ships.
+- 2026-11-16 — Phase 1 gate passed on GitHub Actions (CI and E2E) before Phase 2 work started beyond planning and pure domain code.
+- 2026-11-16 — The sample workspace (ORG-04) is seeded into each new organization, on by default with an opt-out on the create form, rather than living in a separate workspace. "Delete sample data" removes it in one click.
+- 2026-11-16 — Sample reps are real `User` rows with unroutable `@sample.datoflow.invalid` addresses and no password, so they can own leads and appear on the board. Their memberships carry `isSample` and never count as seats.
+- 2026-11-16 — The 2 sample workflows of ORG-04 are added in Phase 4, when the workflow tables exist.
+- 2026-11-16 — Sample leads write no outbox events, so they never trigger automation on their own.
+- 2026-11-16 — Sample deal values are stored in US dollar terms and scaled by a rough rate for the workspace currency when seeded. Only sample data uses those rates.
+- 2026-11-16 — The `OutboxEvent` table and its writes (`lead.created`, `lead.stage_changed`, `lead.assigned`) arrive in Phase 2, in the same transaction as each change. The publisher follows in Phase 4. A new lead with an owner emits only `lead.created`, with the owner in its payload.
+- 2026-11-16 — Organizations get a `country` (ISO 3166-1 alpha-2, default LK) for E.164 phone normalisation (LEAD-02). The data model table names no such field, but LEAD-02 needs the org's default country.
+- 2026-11-16 — Activity that restarts the stage SLA clock: creation, stage change, reassignment and notes (touches join in Phase 3). Editing a field is logged on the timeline but is not follow-up.
+- 2026-11-16 — Stuck-by-SLA is stored as `Lead.slaDueAt` (last activity plus stage SLA, null when closed), so the stuck filter is an indexed comparison. Changing a stage's SLA recomputes it for the leads in that stage. The overdue-next-step half of "stuck" arrives with tasks in Phase 3.
+- 2026-11-16 — One pipeline per organization; `POST …/pipelines` is not built, since multiple pipelines (PIPE-04) is a Could.
+- 2026-11-16 — A pipeline has exactly one Won and one Lost stage and at least one open stage, at most 12 in all. A stage with leads cannot be removed or switch between open and closed (PIPE-01).
+- 2026-11-16 — "Won requires a deal value" is an org setting, on by default (PIPE-03).
+- 2026-11-16 — A new lead belongs to whoever creates it unless they choose otherwise. Sales Reps may leave a lead in the pool but cannot assign it to anyone else.
+- 2026-11-16 — Listing archived leads needs the archive capability (Owner, Admin, Sales Manager).
+- 2026-11-16 — Saved lead filters and the chosen view live on `OrganizationMembership.preferences` (`GET/PUT …/me/preferences`), so they follow the user across devices (LEAD-05).
+- 2026-11-16 — `GET …/assignees` lists members with names for any member, so the board and owner pickers work for every role. Emails stay on the Admin-only members list.
+- 2026-11-16 — Loss reasons are replaced as a list (`PUT …/loss-reasons`). A reason that leads use is retired (inactive) instead of deleted.
+- 2026-11-16 — Date filters use calendar days in the organization's timezone.
+- 2026-11-16 — Duplicate detection never pairs sample and real leads, and a lead page only links duplicates the viewer may open.
+- 2026-11-16 — Board keyboard moves use their own model (Space to pick up, arrows between stages, Space to drop, Escape to cancel, with live announcements). dnd-kit handles pointer and touch dragging only, because its keyboard sensor moves by pixels, not by stage.
+- 2026-11-16 — On the leads page, search and "Stuck only" stay visible and the other filters fold behind a "Filters" button with a count, so the board starts above the fold on desktop and phone.
+- 2026-11-16 — `@datoflow/web#typecheck` waits for `@datoflow/web#build` in Turbo, because both write `.next/types`.

@@ -32,6 +32,10 @@ interface World {
     memberUserId: string;
     invitationId: string;
     invitationToken: string;
+    leadId: string;
+    leadName: string;
+    pipelineId: string;
+    stageId: string;
   };
 }
 
@@ -53,8 +57,71 @@ async function call(client: Client, op: Op, params: Record<string, string>) {
   return client.request(op.method, url, body);
 }
 
+async function leadB(w: World) {
+  const { rows } = await app.sql.query(
+    'SELECT name, "stageId", "archivedAt" FROM "Lead" WHERE id = $1',
+    [w.b.leadId],
+  );
+  return rows[0] as { name: string; stageId: string; archivedAt: Date | null };
+}
+
+/** A's path with B's lead: 404, and B's lead is unchanged. */
+const leadCase = (body?: unknown) => async (w: World, op: Op) => {
+  const res = await w.a.owner.request(
+    op.method,
+    fill(op.path, { orgId: w.a.orgId, leadId: w.b.leadId }),
+    body,
+  );
+  expect(res.status, `${op.method} ${op.path}`).toBe(404);
+  expect(await leadB(w)).toMatchObject({ name: w.b.leadName, archivedAt: null });
+};
+
 /** Cases for routes with an id parameter other than orgId: A's path, B's id. */
 const NESTED: Record<string, (w: World, op: Op) => Promise<void>> = {
+  'GET /v1/orgs/{orgId}/leads/{leadId}': leadCase(),
+  'PATCH /v1/orgs/{orgId}/leads/{leadId}': leadCase({ name: 'Hijacked' }),
+  'POST /v1/orgs/{orgId}/leads/{leadId}/archive': leadCase({}),
+  'POST /v1/orgs/{orgId}/leads/{leadId}/restore': leadCase({}),
+  'GET /v1/orgs/{orgId}/leads/{leadId}/activities': leadCase(),
+  'POST /v1/orgs/{orgId}/leads/{leadId}/activities': async (w, op) => {
+    await leadCase({ type: 'NOTE', text: 'Planted note' })(w, op);
+    const { rows } = await app.sql.query(
+      `SELECT count(*)::int AS n FROM "LeadActivity" WHERE "leadId" = $1 AND type = 'NOTE'`,
+      [w.b.leadId],
+    );
+    expect(rows[0].n).toBe(0);
+  },
+  'PATCH /v1/orgs/{orgId}/pipelines/{pipelineId}': async (w, op) => {
+    const res = await w.a.owner.request(
+      op.method,
+      fill(op.path, { orgId: w.a.orgId, pipelineId: w.b.pipelineId }),
+      { name: 'Hijacked' },
+    );
+    expect(res.status).toBe(404);
+    const { rows } = await app.sql.query('SELECT name FROM "Pipeline" WHERE id = $1', [
+      w.b.pipelineId,
+    ]);
+    expect(rows[0].name).toBe('Sales pipeline');
+  },
+  'PATCH /v1/orgs/{orgId}/pipelines/{pipelineId}/stages': async (w, op) => {
+    const res = await w.a.owner.request(
+      op.method,
+      fill(op.path, { orgId: w.a.orgId, pipelineId: w.b.pipelineId }),
+      {
+        stages: [
+          { name: 'Only', slaHours: 1, kind: 'OPEN' },
+          { name: 'Won', slaHours: 1, kind: 'WON' },
+          { name: 'Lost', slaHours: 1, kind: 'LOST' },
+        ],
+      },
+    );
+    expect(res.status).toBe(404);
+    const { rows } = await app.sql.query(
+      'SELECT count(*)::int AS n FROM "PipelineStage" WHERE "pipelineId" = $1',
+      [w.b.pipelineId],
+    );
+    expect(rows[0].n).toBe(6);
+  },
   'PATCH /v1/orgs/{orgId}/members/{memberId}': async (w, op) => {
     const res = await w.a.owner.request(
       op.method,
@@ -144,6 +211,13 @@ beforeAll(async () => {
   await setPlan(app, orgB.id, 'starter');
   const memberB = await addMember(app, ownerB.client, orgB.id, 'REP', 'tenant-b-rep');
   const pending = await invite(app, ownerB.client, orgB.id, 'pending-b@example.test', 'MANAGER');
+  const lead = await ownerB.client.post(`/v1/orgs/${orgB.id}/leads`, {
+    name: 'Tenant B Lead',
+    email: 'b-lead@example.test',
+  });
+  if (lead.status !== 201)
+    throw new Error(`lead create failed: ${lead.status} ${JSON.stringify(lead.body)}`);
+  const pipelines = await ownerB.client.get(`/v1/orgs/${orgB.id}/pipelines`);
   world = {
     a: { owner: ownerA.client, orgId: orgA.id, userId: ownerA.userId },
     b: {
@@ -154,6 +228,10 @@ beforeAll(async () => {
       memberUserId: memberB.userId,
       invitationId: pending.invitation.id,
       invitationToken: pending.token,
+      leadId: lead.body.id,
+      leadName: 'Tenant B Lead',
+      pipelineId: pipelines.body.items[0].id,
+      stageId: pipelines.body.items[0].stages[0].id,
     },
   };
   const doc = (await new Client(app).get('/v1/openapi.json')).body as {
@@ -191,6 +269,8 @@ describe('NFR-SEC-01 cross-tenant suite', () => {
         orgId: world.b.orgId,
         memberId: world.b.memberId,
         invitationId: world.b.invitationId,
+        leadId: world.b.leadId,
+        pipelineId: world.b.pipelineId,
       };
       const res = await call(world.a.owner, op, params);
       if (res.status !== 404) failures.push(`${op.method} ${op.path} → ${res.status}`);
@@ -224,5 +304,32 @@ describe('NFR-SEC-01 cross-tenant suite', () => {
         e.targetId === world.b.orgId || e.targetId === world.b.invitationId,
     );
     expect(leaked).toEqual([]);
+  });
+});
+
+describe('NFR-SEC-01 references across organizations', () => {
+  it("NFR-SEC-01: a lead cannot point at another organization's stage or member", async () => {
+    const stage = await world.a.owner.post(`/v1/orgs/${world.a.orgId}/leads`, {
+      name: 'Cross stage',
+      stageId: world.b.stageId,
+    });
+    expect(stage.status).toBe(422);
+    expect(stage.body.errors[0].path).toBe('body.stageId');
+    const owner = await world.a.owner.post(`/v1/orgs/${world.a.orgId}/leads`, {
+      name: 'Cross owner',
+      ownerId: world.b.memberUserId,
+    });
+    expect(owner.status).toBe(422);
+    expect(owner.body.errors[0].path).toBe('body.ownerId');
+  });
+
+  it("NFR-SEC-01: search and filters never return another organization's leads", async () => {
+    const res = await world.a.owner.get(`/v1/orgs/${world.a.orgId}/leads?q=Tenant%20B&limit=100`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toEqual([]);
+    const byStage = await world.a.owner.get(
+      `/v1/orgs/${world.a.orgId}/leads?stage=${world.b.stageId}`,
+    );
+    expect(byStage.body.items).toEqual([]);
   });
 });

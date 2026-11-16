@@ -13,6 +13,10 @@ export const ErrorCode = {
   PLAN_LIMIT_REACHED: 'PLAN_LIMIT_REACHED',
   RATE_LIMITED: 'RATE_LIMITED',
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
+  LOSS_REASON_REQUIRED: 'LOSS_REASON_REQUIRED',
+  DEAL_VALUE_REQUIRED: 'DEAL_VALUE_REQUIRED',
+  STAGE_NOT_EMPTY: 'STAGE_NOT_EMPTY',
+  INVALID_STAGES: 'INVALID_STAGES',
   INTERNAL: 'INTERNAL',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -32,4 +36,6 @@ export interface ProblemDocument {
   limit?: string;
   /** Why an invitation cannot be accepted. */
   reason?: string;
+  /** Records that block the request, such as stages that still hold leads. */
+  ids?: string[];
 }

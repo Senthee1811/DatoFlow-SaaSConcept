@@ -51,6 +51,8 @@ describe('schemas', () => {
       slug: 'acme-co',
       timezone: 'Asia/Colombo',
       currency: 'LKR',
+      country: 'LK',
+      withSampleData: true,
     });
     expect(createOrgSchema.safeParse({ ...ok, timezone: 'Mars/Olympus' }).success).toBe(false);
     expect(createOrgSchema.safeParse({ ...ok, slug: 'a--b' }).success).toBe(false);

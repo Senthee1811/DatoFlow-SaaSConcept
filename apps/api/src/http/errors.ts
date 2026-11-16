@@ -30,7 +30,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: ErrorCode,
     detail?: string,
-    readonly extra: Partial<Pick<ProblemDocument, 'errors' | 'limit' | 'reason'>> = {},
+    readonly extra: Partial<Pick<ProblemDocument, 'errors' | 'limit' | 'reason' | 'ids'>> = {},
   ) {
     super(detail ?? TITLES[status] ?? 'Error');
   }

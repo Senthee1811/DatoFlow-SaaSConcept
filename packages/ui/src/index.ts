@@ -6,3 +6,4 @@ export { Badge, StatusBadge } from './badge';
 export { Halftone } from './halftone';
 export { Logo } from './logo';
 export { Divider } from './divider';
+export { Modal } from './modal';

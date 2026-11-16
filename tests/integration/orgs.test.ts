@@ -38,7 +38,7 @@ describe('ORG-01 create an organization', () => {
     });
 
     const { rows: members } = await app.sql.query(
-      'SELECT role, "userId" FROM "OrganizationMembership" WHERE "organizationId" = $1',
+      'SELECT role, "userId" FROM "OrganizationMembership" WHERE "organizationId" = $1 AND NOT "isSample"',
       [res.body.id],
     );
     expect(members).toEqual([{ role: 'OWNER', userId }]);

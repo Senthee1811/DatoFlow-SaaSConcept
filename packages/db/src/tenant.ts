@@ -11,6 +11,12 @@ export const TENANT_MODELS: Record<string, string> = {
   Pipeline: 'organizationId',
   PipelineStage: 'organizationId',
   AuditLog: 'organizationId',
+  LossReason: 'organizationId',
+  Lead: 'organizationId',
+  LeadDuplicate: 'organizationId',
+  LeadActivity: 'organizationId',
+  StageHistory: 'organizationId',
+  OutboxEvent: 'organizationId',
 };
 
 export type DbContext = { mode: 'tenant'; organizationId: string } | { mode: 'system' };

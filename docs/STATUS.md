@@ -1,8 +1,47 @@
 # Status
 
+## Phase 2 — Leads and pipeline (2026-11-16)
+
+**Gate result: passes locally; CI result recorded below once the push has run.**
+
+| Gate check                                      | Result                     | How it was run                                                                                                                                     |
+| ----------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LEAD-05 p95 under 300 ms with 10,000 leads      | Pass: p95 48 ms, max 52 ms | `tests/integration/perf.test.ts`: 10,000 leads in one organization, 69 list requests across search, every filter, every sort and five cursor pages |
+| Keyboard moves work on the board                | Pass                       | `tests/e2e/leads.spec.ts`: Space picks up, arrows choose a stage, Space drops, Escape cancels; focus follows the card; desktop and phone           |
+| Deleting sample data leaves real data untouched | Pass                       | Integration (exact rows left, timeline kept, real leads owned by a sample rep go to the pool) and E2E                                              |
+
+### Requirements done
+
+| ID      | Tests (names start with the ID)                                                                                                                                                                                |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LEAD-01 | Every field kept, first open stage, archive and restore, edits refused while archived; unknown fields rejected                                                                                                 |
+| LEAD-02 | Field-level 422 for invalid email and phone; E.164 with the organization's country (LK and US); domain normalisation rules                                                                                     |
+| LEAD-03 | Linked on email, phone and name + company, never merged; editing into a match links it; UI shows "Possible duplicate" with links                                                                               |
+| LEAD-05 | Search over name, company, email and phone; owner, stage, source, priority, created dates (org timezone), stuck; cursor paging in a stable order; filters persist per user (API and browser); performance gate |
+| LEAD-06 | Created, updated (with field changes), stage changed, assigned, note, archived and restored all on the timeline; workflow actor shown as "Workflow: name"                                                      |
+| PIPE-01 | Add, rename, reorder, set SLA, mark Won or Lost; a stage with leads cannot be removed until they move; new SLA applies to leads in the stage; invalid lists refused; Managers cannot configure                 |
+| PIPE-02 | Drag-and-drop, keyboard moves, and an API error rolls back the optimistic move with a toast (E2E with a forced 500); table view                                                                                |
+| PIPE-03 | Lost refused without a loss reason; Won refused without a deal value unless the org setting is off; the browser asks for them in a dialog                                                                      |
+| ORG-04  | 60 sample leads and 3 sample reps on a new workspace, none counted as seats; delete removes only sample records; Owner and Admin only                                                                          |
+
+Also covered: Sales Rep scope (assigned plus pool, the "Reps can see all leads" setting, no reassigning or archiving), outbox events written in the same transaction as the change, and cross-tenant cases for the 8 new routes plus cross-organization stage and owner references.
+
+### Tests added
+
+- Unit: domain now has 82 tests (98.9% line coverage).
+- Integration: 67 in total (26 new), including the performance gate.
+- E2E: 5 new specs in `tests/e2e/leads.spec.ts`; 8 runs in total pass on desktop and phone.
+
+### Deferred
+
+- The 2 sample workflows of ORG-04 arrive with workflows in Phase 4.
+- The outbox publisher arrives in Phase 4; events accumulate unpublished until then.
+- "Stuck" counts only the stage SLA for now. The overdue-next-step half arrives with tasks in Phase 3.
+- Touches (call, email, message, meeting) on the timeline arrive with the next-step rule in Phase 3.
+
 ## Phase 1 — Foundation (2026-11-16)
 
-**Gate result: passes locally. Not yet run on GitHub Actions** — the repository has no remote yet. The workflows are in `.github/workflows/`; the gate counts once they pass on GitHub.
+**Gate result: pass on GitHub Actions** — [CI run 43865228519](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/43865228519) (lint, types, unit tests with coverage, build, integration and cross-tenant suite, linux/arm64 images) and [E2E run 43865228603](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/43865228603) (UF-4 against a fresh no-secrets Compose stack).
 
 | Gate check                                               | Result | How it was run                                                                                                                                                        |
 | -------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

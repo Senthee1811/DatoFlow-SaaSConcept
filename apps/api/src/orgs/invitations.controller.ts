@@ -236,7 +236,8 @@ export class OrgInvitationsController {
   private async assertSeat(tx: Tx, planCode: string) {
     const now = new Date();
     const [members, pending] = await Promise.all([
-      tx.organizationMembership.count(),
+      // Sample reps never take a seat.
+      tx.organizationMembership.count({ where: { isSample: false } }),
       tx.invitation.count({ where: { status: 'PENDING', expiresAt: { gt: now } } }),
     ]);
     const seat = checkSeats(planCode, members, pending);

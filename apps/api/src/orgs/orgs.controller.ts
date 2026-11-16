@@ -1,7 +1,7 @@
 import { Controller, Get, HttpCode, Inject, Patch, Post, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Db } from '@datoflow/db';
-import { DEFAULT_PIPELINE, type Role } from '@datoflow/domain';
+import { DEFAULT_LOSS_REASONS, DEFAULT_PIPELINE, type Role } from '@datoflow/domain';
 import {
   createOrgSchema,
   ErrorCode,
@@ -18,6 +18,7 @@ import { ApiError } from '../http/errors.js';
 import type { AuthUser, Membership } from '../http/request.js';
 import { ZBody } from '../http/validation.js';
 import { DB } from '../tokens.js';
+import { seedSampleWorkspace } from './sample.js';
 
 interface OrgRow {
   id: string;
@@ -25,12 +26,13 @@ interface OrgRow {
   slug: string;
   timezone: string;
   currency: string;
+  country: string;
   planCode: string;
   settings: unknown;
   createdAt: Date;
 }
 
-export function toOrgDto(org: OrgRow, role: Role): OrgDto {
+export function toOrgDto(org: OrgRow, role: Role, hasSampleData = false): OrgDto {
   const settings = orgSettingsSchema.safeParse(org.settings);
   return {
     id: org.id,
@@ -38,8 +40,10 @@ export function toOrgDto(org: OrgRow, role: Role): OrgDto {
     slug: org.slug,
     timezone: org.timezone,
     currency: org.currency,
+    country: org.country,
     planCode: org.planCode,
     settings: settings.success ? settings.data : {},
+    hasSampleData,
     role,
     createdAt: org.createdAt.toISOString(),
   };
@@ -60,7 +64,19 @@ export class OrgsController {
         orderBy: { organization: { name: 'asc' } },
       }),
     );
-    return { items: memberships.map((m) => toOrgDto(m.organization, m.role as Role)) };
+    const ids = memberships.map((m) => m.organizationId);
+    const withSample = await this.db.withSystem((tx) =>
+      tx.organizationMembership.groupBy({
+        by: ['organizationId'],
+        where: { organizationId: { in: ids }, isSample: true },
+      }),
+    );
+    const sample = new Set(withSample.map((r) => r.organizationId));
+    return {
+      items: memberships.map((m) =>
+        toOrgDto(m.organization, m.role as Role, sample.has(m.organizationId)),
+      ),
+    };
   }
 
   @Post()
@@ -89,7 +105,8 @@ export class OrgsController {
           errors: [{ path: 'body.slug', message: 'This address is taken' }],
         });
       }
-      const org = await tx.organization.create({ data: { ...body, settings: {} } });
+      const { withSampleData, ...fields } = body;
+      const org = await tx.organization.create({ data: { ...fields, settings: {} } });
       await tx.organizationMembership.create({
         data: { organizationId: org.id, userId: user.id, role: 'OWNER' },
       });
@@ -103,13 +120,21 @@ export class OrgsController {
           pipelineId: pipeline.id,
         })),
       });
+      await tx.lossReason.createMany({
+        data: DEFAULT_LOSS_REASONS.map((label, order) => ({
+          organizationId: org.id,
+          label,
+          order,
+        })),
+      });
+      const sample = withSampleData ? await seedSampleWorkspace(tx, org) : null;
       await audit(tx, org.id, actor, {
         action: 'org.created',
         targetType: 'Organization',
         targetId: org.id,
-        metadata: { name: org.name, slug: org.slug },
+        metadata: { name: org.name, slug: org.slug, sampleData: Boolean(sample) },
       });
-      return toOrgDto(org, 'OWNER');
+      return toOrgDto(org, 'OWNER', Boolean(sample));
     });
   }
 
@@ -117,10 +142,13 @@ export class OrgsController {
   @OrgRoute()
   @ApiOperation({ summary: 'One organization. 404 without membership (ORG-02)' })
   async get(@CurrentMembership() membership: Membership): Promise<OrgDto> {
-    const org = await this.db.withTenant(membership.organizationId, (tx) =>
-      tx.organization.findUniqueOrThrow({ where: { id: membership.organizationId } }),
-    );
-    return toOrgDto(org, membership.role);
+    return this.db.withTenant(membership.organizationId, async (tx) => {
+      const org = await tx.organization.findUniqueOrThrow({
+        where: { id: membership.organizationId },
+      });
+      const sample = await tx.organizationMembership.count({ where: { isSample: true } });
+      return toOrgDto(org, membership.role, sample > 0);
+    });
   }
 
   @Patch(':orgId')
@@ -148,7 +176,8 @@ export class OrgsController {
         targetId: org.id,
         metadata: { fields: Object.keys(body) },
       });
-      return toOrgDto(org, membership.role);
+      const sample = await tx.organizationMembership.count({ where: { isSample: true } });
+      return toOrgDto(org, membership.role, sample > 0);
     });
   }
 }

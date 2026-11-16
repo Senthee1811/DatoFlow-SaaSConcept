@@ -2,3 +2,7 @@ export * from './roles.js';
 export * from './plans.js';
 export * from './invitation.js';
 export * from './pipeline.js';
+export * from './leads.js';
+export * from './activity.js';
+export * from './sample.js';
+export * from './time.js';

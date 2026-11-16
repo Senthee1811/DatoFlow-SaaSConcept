@@ -20,7 +20,10 @@ export type AuditAction =
   | 'invitation.created'
   | 'invitation.resent'
   | 'invitation.revoked'
-  | 'invitation.accepted';
+  | 'invitation.accepted'
+  | 'pipeline.updated'
+  | 'loss_reasons.updated'
+  | 'sample.deleted';
 
 export interface AuditEntry {
   action: AuditAction;

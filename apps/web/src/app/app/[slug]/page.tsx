@@ -35,6 +35,25 @@ export default function OverviewPage() {
         </Halftone>
       ) : null}
 
+      {org.hasSampleData ? (
+        <Card density="dense" className="flex flex-wrap items-center justify-between gap-4">
+          <p className="max-w-2xl">
+            This workspace holds sample data: a fictional agency with 60 leads and 3 reps. Try the
+            board and the filters on it, then delete it when your own leads arrive.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/app/${org.slug}/leads`} className={buttonClass('secondary')}>
+              Open the leads
+            </Link>
+            {can(org.role, 'org.settings') ? (
+              <Link href={`/app/${org.slug}/settings`} className={buttonClass('ghost')}>
+                Delete sample data
+              </Link>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-3">
         <Card density="dense" className="flex flex-col gap-2">
           <h2 className="text-body-sm">Timezone</h2>

@@ -24,6 +24,7 @@ type MemberRow = {
   id: string;
   userId: string;
   role: string;
+  isSample: boolean;
   createdAt: Date;
   user: { name: string; email: string };
 };
@@ -35,6 +36,7 @@ function toMemberDto(m: MemberRow): MemberDto {
     name: m.user.name,
     email: m.user.email,
     role: m.role as Role,
+    isSample: m.isSample,
     joinedAt: m.createdAt.toISOString(),
   };
 }

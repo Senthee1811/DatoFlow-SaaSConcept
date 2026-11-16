@@ -29,6 +29,43 @@ enum StageKind {
   LOST
 }
 
+enum LeadSource {
+  WEBSITE
+  FORM
+  WEBHOOK
+  IMPORT
+  REFERRAL
+  PAID_SOCIAL
+  PAID_SEARCH
+  EMAIL
+  EVENT
+  MANUAL
+  OTHER
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum ActorType {
+  USER
+  WORKFLOW
+  SYSTEM
+}
+
+enum DuplicateReason {
+  EMAIL
+  PHONE
+  NAME_COMPANY
+}
+
+enum DuplicateStatus {
+  OPEN
+  DISMISSED
+}
+
 // ---------------------------------------------------------------------------
 // Auth-provider tables. Better Auth owns their shape. They are not tenant tables.
 // ---------------------------------------------------------------------------
@@ -45,6 +82,7 @@ model User {
   sessions    Session[]
   accounts    Account[]
   memberships OrganizationMembership[]
+  ownedLeads  Lead[]                   @relation("LeadOwner")
 }
 
 model Session {
@@ -110,6 +148,8 @@ model Organization {
   metadata  String?
   timezone  String    @default("Asia/Colombo")
   currency  String    @default("USD")
+  /// ISO 3166-1 alpha-2. Phone numbers without a country code are read as this country (LEAD-02).
+  country   String    @default("LK")
   settings  Json      @default("{}")
   planCode  String    @default("free")
   createdAt DateTime  @default(now())
@@ -121,6 +161,8 @@ model Organization {
   invitations Invitation[]
   pipelines   Pipeline[]
   auditLogs   AuditLog[]
+  leads       Lead[]
+  lossReasons LossReason[]
 }
 
 model OrganizationMembership {
@@ -128,6 +170,10 @@ model OrganizationMembership {
   organizationId String
   userId         String
   role           Role
+  /// A fictional rep from the sample workspace (ORG-04). Never counted as a seat.
+  isSample       Boolean  @default(false)
+  /// Per-user settings in this workspace, such as saved lead filters (LEAD-05).
+  preferences    Json     @default("{}")
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -180,6 +226,7 @@ model PipelineStage {
   kind           StageKind @default(OPEN)
 
   pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  leads    Lead[]
 
   @@unique([pipelineId, order])
   @@index([organizationId])
@@ -199,6 +246,139 @@ model AuditLog {
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+model LossReason {
+  id             String  @id @default(uuid())
+  organizationId String
+  label          String
+  active         Boolean @default(true)
+  order          Int     @default(0)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads        Lead[]
+
+  @@unique([organizationId, label])
+}
+
+model Lead {
+  id              String     @id @default(uuid())
+  organizationId  String
+  pipelineId      String
+  stageId         String
+  /// A user who is a member of the organization, or null for the unassigned pool.
+  ownerId         String?
+  name            String
+  company         String?
+  /// As entered, for display.
+  email           String?
+  emailNormalized String?
+  /// As entered, for display.
+  phone           String?
+  phoneE164       String?
+  /// lower(name)|lower(company), for duplicate matching. Null without a company.
+  nameCompanyKey  String?
+  source          LeadSource @default(MANUAL)
+  priority        Priority   @default(NORMAL)
+  dealValue       Decimal?   @db.Decimal(14, 2)
+  currency        String
+  notes           String?
+  /// utm_source, utm_medium, utm_campaign, utm_term, utm_content.
+  utm             Json?
+  lossReasonId    String?
+  isSample        Boolean    @default(false)
+  createdById     String?
+  stageEnteredAt  DateTime   @default(now())
+  /// Last activity that counts as following up. Drives the stage SLA.
+  lastActivityAt  DateTime   @default(now())
+  /// lastActivityAt plus the stage SLA, for open leads. Null when closed.
+  slaDueAt        DateTime?
+  closedAt        DateTime?
+  archivedAt      DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  organization          Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stage                 PipelineStage   @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  owner                 User?           @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  lossReason            LossReason?     @relation(fields: [lossReasonId], references: [id], onDelete: SetNull)
+  activities            LeadActivity[]
+  stageHistory          StageHistory[]
+  duplicatesAsLead      LeadDuplicate[] @relation("DuplicateLead")
+  duplicatesAsCandidate LeadDuplicate[] @relation("DuplicateCandidate")
+
+  @@index([organizationId, stageId])
+  @@index([organizationId, ownerId])
+  @@index([organizationId, emailNormalized])
+  @@index([organizationId, phoneE164])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, nameCompanyKey])
+  @@index([organizationId, slaDueAt])
+}
+
+/// A possible duplicate. Shown with a link; never merged automatically (LEAD-03).
+model LeadDuplicate {
+  id             String          @id @default(uuid())
+  organizationId String
+  leadId         String
+  candidateId    String
+  reason         DuplicateReason
+  status         DuplicateStatus @default(OPEN)
+  createdAt      DateTime        @default(now())
+
+  lead      Lead @relation("DuplicateLead", fields: [leadId], references: [id], onDelete: Cascade)
+  candidate Lead @relation("DuplicateCandidate", fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, candidateId])
+  @@index([organizationId, candidateId])
+}
+
+model LeadActivity {
+  id             String    @id @default(uuid())
+  organizationId String
+  leadId         String
+  type           String
+  actorType      ActorType
+  actorId        String?
+  /// The actor's name when the activity happened, such as a workflow's name.
+  actorLabel     String?
+  payload        Json      @default("{}")
+  occurredAt     DateTime  @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, leadId, occurredAt])
+}
+
+model StageHistory {
+  id             String   @id @default(uuid())
+  organizationId String
+  leadId         String
+  fromStageId    String?
+  toStageId      String
+  actorId        String?
+  enteredAt      DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, toStageId, enteredAt])
+  @@index([leadId])
+}
+
+/// Written in the same transaction as the change it describes. The worker publishes it (Phase 4).
+model OutboxEvent {
+  id             String    @id @default(uuid())
+  organizationId String
+  type           String
+  aggregateType  String
+  aggregateId    String
+  payload        Json
+  depth          Int       @default(0)
+  causationId    String?
+  createdAt      DateTime  @default(now())
+  publishedAt    DateTime?
 
   @@index([organizationId, createdAt])
 }

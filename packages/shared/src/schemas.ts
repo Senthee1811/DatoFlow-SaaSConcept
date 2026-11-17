@@ -55,6 +55,8 @@ export const orgSettingsSchema = z.strictObject({
   repsCanSeeAllLeads: z.boolean().optional(),
   /** PIPE-03: Won needs a deal value. On by default. */
   wonRequiresDealValue: z.boolean().optional(),
+  /** TASK-02: `require` (default) refuses a touch without a next step; `warn` saves it and warns. */
+  nextStepRule: z.enum(['require', 'warn']).optional(),
 });
 export type OrgSettings = z.infer<typeof orgSettingsSchema>;
 

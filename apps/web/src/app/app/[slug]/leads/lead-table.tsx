@@ -11,6 +11,21 @@ import { formatInOrgTime } from '@/lib/org-context';
 import { filtersToQuery } from './filters';
 import { LeadBadges } from './lead-badges';
 
+/** The lead's next step: when it is due, or a plain "None" on an open lead without one. */
+function NextStepCell({
+  lead,
+  open,
+  timezone,
+}: {
+  lead: LeadSummaryDto;
+  open: boolean;
+  timezone: string;
+}) {
+  if (!open || lead.archivedAt) return <span className="text-obsidian/75">Closed</span>;
+  if (!lead.nextStepDueAt) return <span>None</span>;
+  return <span>{formatInOrgTime(lead.nextStepDueAt, timezone, { year: undefined })}</span>;
+}
+
 const SORTS: { value: NonNullable<LeadFilters['sort']>; label: string }[] = [
   { value: 'created_desc', label: 'Newest first' },
   { value: 'sla_asc', label: 'Closest to stuck' },
@@ -124,6 +139,9 @@ export function LeadTable({
                 <th scope="col" className="px-3 py-3 font-medium">
                   Created
                 </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  Next step
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -160,6 +178,13 @@ export function LeadTable({
                       hour: undefined,
                       minute: undefined,
                     })}
+                  </td>
+                  <td className="tabular px-3 py-3 text-body-sm">
+                    <NextStepCell
+                      lead={lead}
+                      open={lookups.stageById.get(lead.stageId)?.kind === 'OPEN'}
+                      timezone={timezone}
+                    />
                   </td>
                 </tr>
               ))}

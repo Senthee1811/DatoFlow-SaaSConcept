@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const [country, setCountry] = useState(org.country);
   const [repsSeeAll, setRepsSeeAll] = useState(Boolean(org.settings.repsCanSeeAllLeads));
   const [wonNeedsValue, setWonNeedsValue] = useState(org.settings.wonRequiresDealValue ?? true);
+  const [warnOnly, setWarnOnly] = useState(org.settings.nextStepRule === 'warn');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -32,7 +33,11 @@ export default function SettingsPage() {
           timezone,
           currency,
           country,
-          settings: { repsCanSeeAllLeads: repsSeeAll, wonRequiresDealValue: wonNeedsValue },
+          settings: {
+            repsCanSeeAllLeads: repsSeeAll,
+            wonRequiresDealValue: wonNeedsValue,
+            nextStepRule: warnOnly ? 'warn' : 'require',
+          },
         },
       });
       await reload();
@@ -139,6 +144,21 @@ export default function SettingsPage() {
               Won leads need a deal value
               <span className="block text-body-sm text-obsidian/75">
                 Lost leads always need a loss reason
+              </span>
+            </span>
+          </label>
+          <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-medium bg-pumice px-5 py-4">
+            <input
+              type="checkbox"
+              className="mt-1 size-5 accent-obsidian"
+              checked={warnOnly}
+              onChange={(e) => setWarnOnly(e.target.checked)}
+            />
+            <span>
+              Only warn when a touch has no next step
+              <span className="block text-body-sm text-obsidian/75">
+                Off by default. When off, a call, email, message or meeting on an open lead saves
+                only with a dated next step, or with a move to Won or Lost
               </span>
             </span>
           </label>

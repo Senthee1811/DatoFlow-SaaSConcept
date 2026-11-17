@@ -17,6 +17,8 @@ export const TENANT_MODELS: Record<string, string> = {
   LeadActivity: 'organizationId',
   StageHistory: 'organizationId',
   OutboxEvent: 'organizationId',
+  Task: 'organizationId',
+  Notification: 'organizationId',
 };
 
 export type DbContext = { mode: 'tenant'; organizationId: string } | { mode: 'system' };

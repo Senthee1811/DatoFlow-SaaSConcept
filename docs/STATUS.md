@@ -1,5 +1,33 @@
 # Status
 
+## Phase 3 — Tasks and the next-step rule (2026-11-17)
+
+**Gate result: pass locally; GitHub Actions not yet run.** The full suite ran against the Compose stack on a Windows/Docker Desktop machine (web on port 3100, `RADAR_INTERVAL_SECONDS=10`, `REMINDER_INTERVAL_SECONDS=5`, as in the E2E workflow).
+
+| Gate check                                          | Result | How it was run                                                                                                                                                              |
+| --------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UF-8 E2E passes                                     | Pass   | `tests/e2e/uf-8.spec.ts`: My day order, a touch refused without a next step, a reminder in-app and by email, reminder emails turned off; a touch that closes as Won (phone) |
+| UF-2 E2E passes                                     | Pass   | `tests/e2e/uf-2.spec.ts`: open stages, Won and Lost, the radar flags a lead on change and on its sweep, My day orders stuck leads, the Owner reassigns one                  |
+| Each reminder is sent exactly once across a restart | Pass   | `tests/integration/reminders.test.ts`: restart, a crash mid-send without idempotency (skipped, not repeated), and with Resend (retried under the same key)                  |
+
+### Requirements done
+
+TASK-01, TASK-02, TASK-03, TASK-04, TASK-05, NOT-01. Test names start with the ID.
+
+### Tests added
+
+- Unit: domain now has 104 tests (22 new: next-step rule, stuck reasons, My day, reminder key and window, digest time across timezones and daylight saving, email budget).
+- Integration: 97 in total (30 new), including cross-tenant cases for every new route.
+- E2E: 13 runs pass on desktop and phone (UF-2 and UF-8 new).
+
+### Fixed while running the gate
+
+The new E2E specs had locator bugs, not app bugs: `getByLabel('Next step')` and `getByText('Stuck: no activity')` also matched the "Next steps" section, the "Set the next step" radio and the timeline entry; the bell check counted before the unread count loaded; and UF-2's quiet lead had an earlier deadline than the lead it was meant to follow.
+
+### Deferred
+
+- The 2 sample workflows of ORG-04 and the outbox publisher still arrive in Phase 4.
+
 ## Phase 2 — Leads and pipeline (2026-11-16)
 
 **Gate result: pass on GitHub Actions** — [CI run 43873830195](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/43873830195) (lint, types, unit tests with coverage, build, integration and cross-tenant suite including the 10k-lead p95 check, linux/arm64 images) and [E2E run 43873830255](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/43873830255) (leads, board and sample-data flows against a fresh no-secrets Compose stack, desktop and phone).

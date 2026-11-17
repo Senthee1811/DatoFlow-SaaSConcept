@@ -1,6 +1,6 @@
 import { Controller, Get, Inject, Patch, Put, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Db, Tx } from '@datoflow/db';
+import { runRadar, type Db, type Tx } from '@datoflow/db';
 import { planStages, type StageKind } from '@datoflow/domain';
 import {
   ErrorCode,
@@ -158,6 +158,9 @@ export class PipelinesController {
           UPDATE "Lead" SET "slaDueAt" = "lastActivityAt" + make_interval(hours => ${s.slaHours}::int)
           WHERE "stageId" = ${s.id} AND "organizationId" = ${membership.organizationId}`;
       }
+      // A shorter SLA can make leads stuck at once, and a longer one can free them (TASK-03).
+      if (slaChanged.length)
+        await runRadar(tx, new Date(), { organizationId: membership.organizationId });
       const after = await pipelineDto(tx, pipelineId);
       await audit(tx, membership.organizationId, actorFrom(req), {
         action: 'pipeline.updated',

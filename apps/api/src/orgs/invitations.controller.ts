@@ -356,6 +356,24 @@ export class InvitationTokenController {
           where: { id: inv.inviterId },
           select: { email: true },
         });
+        // The inviter hears about it in the notification centre (NOT-01), if still a member.
+        const inviterIsMember = await tx.organizationMembership.findUnique({
+          where: {
+            userId_organizationId: { userId: inv.inviterId, organizationId: inv.organizationId },
+          },
+          select: { id: true },
+        });
+        if (inviterIsMember) {
+          await tx.notification.create({
+            data: {
+              organizationId: inv.organizationId,
+              userId: inv.inviterId,
+              kind: 'MEMBER_JOINED',
+              channel: 'IN_APP',
+              payload: { userId: user.id, name: user.name, role: membership.role },
+            },
+          });
+        }
         return { inv, membership, inviterEmail: inviter?.email ?? null };
       },
     );
@@ -368,7 +386,7 @@ export class InvitationTokenController {
       });
     }
 
-    // The inviter is told by email. In-app notifications arrive with NOT-01 in Phase 3.
+    // The inviter is also told by email.
     if (result.inviterEmail) {
       await this.email
         .send({

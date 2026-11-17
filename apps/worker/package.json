@@ -10,7 +10,9 @@
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput"
   },
   "dependencies": {
+    "@datoflow/adapters": "workspace:*",
     "@datoflow/db": "workspace:*",
+    "@datoflow/domain": "workspace:*",
     "@datoflow/shared": "workspace:*",
     "@nestjs/common": "12.5.0",
     "@nestjs/core": "12.5.0",
@@ -26,5 +28,11 @@
     "@types/express": "5.0.6",
     "@types/node": "26.6.6",
     "typescript": "6.0.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
+    }
   }
 }

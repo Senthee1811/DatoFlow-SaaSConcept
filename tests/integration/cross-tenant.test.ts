@@ -36,6 +36,8 @@ interface World {
     leadName: string;
     pipelineId: string;
     stageId: string;
+    taskId: string;
+    notificationId: string;
   };
 }
 
@@ -90,6 +92,28 @@ const NESTED: Record<string, (w: World, op: Op) => Promise<void>> = {
       [w.b.leadId],
     );
     expect(rows[0].n).toBe(0);
+  },
+  'PATCH /v1/orgs/{orgId}/tasks/{taskId}': async (w, op) => {
+    const res = await w.a.owner.request(
+      op.method,
+      fill(op.path, { orgId: w.a.orgId, taskId: w.b.taskId }),
+      { status: 'DONE', title: 'Hijacked' },
+    );
+    expect(res.status).toBe(404);
+    const { rows } = await app.sql.query('SELECT status, title FROM "Task" WHERE id = $1', [
+      w.b.taskId,
+    ]);
+    expect(rows[0]).toEqual({ status: 'OPEN', title: 'Tenant B step' });
+  },
+  'POST /v1/orgs/{orgId}/notifications/{notificationId}/read': async (w, op) => {
+    const res = await w.a.owner.post(
+      fill(op.path, { orgId: w.a.orgId, notificationId: w.b.notificationId }),
+    );
+    expect(res.status).toBe(404);
+    const { rows } = await app.sql.query('SELECT "readAt" FROM "Notification" WHERE id = $1', [
+      w.b.notificationId,
+    ]);
+    expect(rows[0].readAt).toBeNull();
   },
   'PATCH /v1/orgs/{orgId}/pipelines/{pipelineId}': async (w, op) => {
     const res = await w.a.owner.request(
@@ -218,6 +242,15 @@ beforeAll(async () => {
   if (lead.status !== 201)
     throw new Error(`lead create failed: ${lead.status} ${JSON.stringify(lead.body)}`);
   const pipelines = await ownerB.client.get(`/v1/orgs/${orgB.id}/pipelines`);
+  const task = await ownerB.client.post(`/v1/orgs/${orgB.id}/tasks`, {
+    leadId: lead.body.id,
+    title: 'Tenant B step',
+    type: 'CALL',
+    dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+  if (task.status !== 201) throw new Error(`task create failed: ${task.status}`);
+  // B's owner was notified when B's rep joined (NOT-01).
+  const notifications = await ownerB.client.get(`/v1/orgs/${orgB.id}/notifications`);
   world = {
     a: { owner: ownerA.client, orgId: orgA.id, userId: ownerA.userId },
     b: {
@@ -232,6 +265,8 @@ beforeAll(async () => {
       leadName: 'Tenant B Lead',
       pipelineId: pipelines.body.items[0].id,
       stageId: pipelines.body.items[0].stages[0].id,
+      taskId: task.body.id,
+      notificationId: notifications.body.items[0].id,
     },
   };
   const doc = (await new Client(app).get('/v1/openapi.json')).body as {
@@ -271,6 +306,8 @@ describe('NFR-SEC-01 cross-tenant suite', () => {
         invitationId: world.b.invitationId,
         leadId: world.b.leadId,
         pipelineId: world.b.pipelineId,
+        taskId: world.b.taskId,
+        notificationId: world.b.notificationId,
       };
       const res = await call(world.a.owner, op, params);
       if (res.status !== 404) failures.push(`${op.method} ${op.path} → ${res.status}`);
@@ -321,6 +358,29 @@ describe('NFR-SEC-01 references across organizations', () => {
     });
     expect(owner.status).toBe(422);
     expect(owner.body.errors[0].path).toBe('body.ownerId');
+  });
+
+  it("NFR-SEC-01: a task cannot name another organization's lead or member", async () => {
+    const onB = await world.a.owner.post(`/v1/orgs/${world.a.orgId}/tasks`, {
+      leadId: world.b.leadId,
+      title: 'Planted',
+      type: 'CALL',
+      dueAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    expect(onB.status).toBe(404);
+    const own = await world.a.owner.post(`/v1/orgs/${world.a.orgId}/leads`, { name: 'A lead' });
+    const toB = await world.a.owner.post(`/v1/orgs/${world.a.orgId}/tasks`, {
+      leadId: own.body.id,
+      title: 'For B',
+      type: 'CALL',
+      dueAt: new Date(Date.now() + 3_600_000).toISOString(),
+      assigneeId: world.b.memberUserId,
+    });
+    expect(toB.status).toBe(422);
+    const tasks = await world.a.owner.get(`/v1/orgs/${world.a.orgId}/tasks?status=all`);
+    expect(tasks.body.items.map((t: { id: string }) => t.id)).not.toContain(world.b.taskId);
+    const day = await world.a.owner.get(`/v1/orgs/${world.a.orgId}/me/day`);
+    expect(JSON.stringify(day.body)).not.toContain(world.b.leadId);
   });
 
   it("NFR-SEC-01: search and filters never return another organization's leads", async () => {

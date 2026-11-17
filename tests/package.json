@@ -12,13 +12,16 @@
     "@datoflow/adapters": "workspace:*",
     "@datoflow/api": "workspace:*",
     "@datoflow/db": "workspace:*",
-    "@datoflow/shared": "workspace:*"
+    "@datoflow/domain": "workspace:*",
+    "@datoflow/shared": "workspace:*",
+    "@datoflow/worker": "workspace:*"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.65.1",
     "@types/node": "26.6.6",
     "@types/pg": "8.23.1",
+    "ioredis": "5.11.1",
     "pg": "8.23.1",
     "testcontainers": "12.2.1",
     "typescript": "6.0.3",

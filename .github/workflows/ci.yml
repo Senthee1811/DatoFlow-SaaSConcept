@@ -50,7 +50,7 @@ jobs:
           node-version: 24.22.3
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run build --filter=@datoflow/api...
+      - run: pnpm turbo run build --filter=@datoflow/tests...
       - name: Integration tests (Testcontainers Postgres and Redis)
         run: pnpm test:integration
 

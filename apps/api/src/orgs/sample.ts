@@ -1,4 +1,4 @@
-import type { Tx } from '@datoflow/db';
+import { refreshNextSteps, runRadar, type Tx } from '@datoflow/db';
 import {
   buildSampleWorkspace,
   duplicateReason,
@@ -6,6 +6,7 @@ import {
   normaliseLeadEmail,
   normalisePhone,
   sampleDealValue,
+  sampleNextSteps,
   slaDueAt,
 } from '@datoflow/domain';
 import { randomUUID } from 'node:crypto';
@@ -137,6 +138,28 @@ export async function seedSampleWorkspace(
     }),
   );
   if (duplicates.length) await tx.leadDuplicate.createMany({ data: duplicates });
+
+  // Open, assigned sample leads get a next step from their rep. Some are overdue, so the radar
+  // and My day have something to show; a few have none, which the radar also catches by SLA.
+  const steps = sampleNextSteps(sample.leads, now);
+  await tx.task.createMany({
+    data: steps.map((step) => {
+      const lead = leads[step.leadIndex]!;
+      return {
+        organizationId: org.id,
+        leadId: lead.id,
+        title: step.title,
+        type: step.type,
+        dueAt: step.dueAt,
+        priority: lead.priority,
+        assigneeId: lead.ownerId,
+        createdAt: lead.lastActivityAt,
+      };
+    }),
+  });
+  const ids = leads.map((l) => l.id);
+  await refreshNextSteps(tx, { leadIds: ids, organizationId: org.id });
+  await runRadar(tx, now, { leadIds: ids, organizationId: org.id });
   return { leads: leads.length, reps: repIds.length };
 }
 
@@ -149,11 +172,22 @@ export async function deleteSampleData(tx: Tx) {
   const userIds = sampleMembers.map((m) => m.userId);
   const { count: leads } = await tx.lead.deleteMany({ where: { isSample: true } });
   if (userIds.length) {
+    // Tasks on real leads that were given to a sample rep lose their assignee when the rep goes,
+    // so those leads need their next step recomputed below.
+    const affected = await tx.task.findMany({
+      where: { assigneeId: { in: userIds } },
+      select: { leadId: true },
+    });
     await tx.lead.updateMany({ where: { ownerId: { in: userIds } }, data: { ownerId: null } });
     await tx.organizationMembership.deleteMany({ where: { isSample: true } });
     await tx.user.deleteMany({
       where: { id: { in: userIds }, email: { endsWith: '@sample.datoflow.invalid' } },
     });
+    const leadIds = [...new Set(affected.map((t) => t.leadId))];
+    if (leadIds.length) {
+      await refreshNextSteps(tx, { leadIds });
+      await runRadar(tx, new Date(), { leadIds });
+    }
   }
   return { leads, reps: userIds.length };
 }

@@ -1,4 +1,4 @@
-/** Activity types on a lead's timeline (LEAD-06). Touches (calls, emails, meetings) arrive in Phase 3. */
+/** Activity types on a lead's timeline (LEAD-06): changes, notes, touches, tasks and radar flags. */
 export const ACTIVITY_TYPES = [
   'CREATED',
   'UPDATED',
@@ -8,6 +8,12 @@ export const ACTIVITY_TYPES = [
   'ARCHIVED',
   'RESTORED',
   'DUPLICATE_FOUND',
+  'TOUCH',
+  'TASK_CREATED',
+  'TASK_UPDATED',
+  'TASK_COMPLETED',
+  'TASK_CANCELLED',
+  'STUCK',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -22,6 +28,7 @@ export const SLA_RESETTING_ACTIVITY: ReadonlySet<ActivityType> = new Set([
   'STAGE_CHANGED',
   'ASSIGNED',
   'NOTE',
+  'TOUCH',
 ]);
 
 /** How an actor is named on the timeline. Workflow changes read "Workflow: name" (LEAD-06). */

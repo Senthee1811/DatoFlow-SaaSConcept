@@ -1,7 +1,7 @@
 'use client';
 
 import { can, PRIORITY_LABEL, SOURCE_LABEL } from '@datoflow/domain';
-import type { ActivityDto, LeadDto, Page } from '@datoflow/shared';
+import type { ActivityDto, LeadDto, Page, TaskDto } from '@datoflow/shared';
 import {
   Badge,
   Button,
@@ -12,7 +12,7 @@ import {
   StatusBadge,
   Textarea,
 } from '@datoflow/ui';
-import { ArrowLeft, Copy } from 'lucide-react';
+import { ArrowLeft, Copy, PhoneCall } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
@@ -20,8 +20,11 @@ import { api, ApiProblem, problemMessage } from '@/lib/api';
 import { formatMoney, useLookups, type Lookups } from '@/lib/lookups';
 import { formatInOrgTime, useOrg } from '@/lib/org-context';
 import { CloseDialog, needsCloseDialog, type CloseRequest } from '../close-dialog';
-import { LeadBadges } from '../lead-badges';
+import { LeadBadges, stuckText } from '../lead-badges';
 import { initialValues, LeadForm, toBody } from '../lead-form';
+import { blankNextStep, NextStepFields, nextStepBody } from '../../tasks/next-step-fields';
+import { TaskItem } from '../../tasks/task-item';
+import { TouchDialog } from '../../tasks/touch-dialog';
 
 const REASON_TEXT = {
   EMAIL: 'same email',
@@ -30,9 +33,11 @@ const REASON_TEXT = {
 } as const;
 
 export function LeadDetail({ leadId }: { leadId: string }) {
-  const { org } = useOrg();
+  const { org, me } = useOrg();
   const { lookups, error: lookupError } = useLookups(org.id);
   const [lead, setLead] = useState<LeadDto | null>(null);
+  const [tasks, setTasks] = useState<TaskDto[]>([]);
+  const [touching, setTouching] = useState(false);
   const [missing, setMissing] = useState(false);
   const [timelineKey, setTimelineKey] = useState(0);
   const [closing, setClosing] = useState<(CloseRequest & { stageId: string }) | null>(null);
@@ -47,9 +52,27 @@ export function LeadDetail({ leadId }: { leadId: string }) {
     }
   }, [base]);
 
+  const loadTasks = useCallback(async () => {
+    try {
+      const page = await api<Page<TaskDto>>(
+        `/v1/orgs/${org.id}/tasks?leadId=${leadId}&status=open&limit=100`,
+      );
+      setTasks(page.items);
+    } catch (e) {
+      if (!(e instanceof ApiProblem && e.status === 404)) toast(problemMessage(e));
+    }
+  }, [org.id, leadId]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadTasks();
+  }, [load, loadTasks]);
+
+  /** After a touch or a task change: the lead, its next steps and its timeline all move. */
+  async function refreshAll() {
+    await Promise.all([load(), loadTasks()]);
+    setTimelineKey((k) => k + 1);
+  }
 
   async function patch(body: Record<string, unknown>, success: string) {
     try {
@@ -224,9 +247,14 @@ export function LeadDetail({ leadId }: { leadId: string }) {
               <dd>{formatInOrgTime(lead.stageEnteredAt, org.timezone)}</dd>
               <dt className="text-obsidian/75">Last activity</dt>
               <dd>{formatInOrgTime(lead.lastActivityAt, org.timezone)}</dd>
-              {lead.slaDueAt ? (
+              {lead.stuck ? (
                 <>
-                  <dt className="text-obsidian/75">{lead.stuck ? 'Stuck since' : 'Stuck after'}</dt>
+                  <dt className="text-obsidian/75">Radar</dt>
+                  <dd>{stuckText(lead.stuckReasons)}</dd>
+                </>
+              ) : lead.slaDueAt ? (
+                <>
+                  <dt className="text-obsidian/75">Stuck after</dt>
                   <dd>{formatInOrgTime(lead.slaDueAt, org.timezone)}</dd>
                 </>
               ) : null}
@@ -260,6 +288,15 @@ export function LeadDetail({ leadId }: { leadId: string }) {
               <StatusBadge status="done">{stage?.kind === 'WON' ? 'Won' : 'Lost'}</StatusBadge>
             ) : null}
           </Card>
+          <NextSteps
+            lead={lead}
+            tasks={tasks}
+            lookups={lookups}
+            editable={editable}
+            open={stage?.kind === 'OPEN'}
+            onTouch={() => setTouching(true)}
+            onChanged={refreshAll}
+          />
           <Timeline
             key={timelineKey}
             base={base}
@@ -269,6 +306,26 @@ export function LeadDetail({ leadId }: { leadId: string }) {
           />
         </div>
       </div>
+
+      {editable ? (
+        <TouchDialog
+          open={touching}
+          onClose={() => setTouching(false)}
+          onSaved={() => {
+            setTouching(false);
+            void refreshAll();
+          }}
+          lead={lead}
+          openTasks={tasks}
+          lookups={lookups}
+          orgId={org.id}
+          userId={me.id}
+          timezone={org.timezone}
+          canAssign={org.role !== 'REP'}
+          warnOnly={org.settings.nextStepRule === 'warn'}
+          wonRequiresDealValue={org.settings.wonRequiresDealValue ?? true}
+        />
+      ) : null}
 
       <CloseDialog
         request={closing}
@@ -284,6 +341,13 @@ export function LeadDetail({ leadId }: { leadId: string }) {
     </>
   );
 }
+
+const TOUCH_TEXT: Record<string, string> = {
+  CALL: 'logged a call',
+  EMAIL: 'logged an email',
+  WHATSAPP: 'logged a WhatsApp message',
+  MEETING: 'logged a meeting',
+};
 
 const FIELD_LABEL: Record<string, string> = {
   name: 'name',
@@ -324,6 +388,24 @@ function describe(a: ActivityDto, lookups: Lookups): string {
       return 'restored the lead';
     case 'DUPLICATE_FOUND':
       return `flagged a possible duplicate: ${String(a.payload.candidateName ?? '')}`;
+    case 'TOUCH':
+      return TOUCH_TEXT[String(a.payload.channel)] ?? 'logged a touch';
+    case 'TASK_CREATED':
+      return `set a next step: ${String(a.payload.title ?? '')}, for ${person(a.payload.assigneeId)}`;
+    case 'TASK_UPDATED':
+      return `changed a next step: ${String(a.payload.title ?? '')}`;
+    case 'TASK_COMPLETED':
+      return `finished: ${String(a.payload.title ?? '')}`;
+    case 'TASK_CANCELLED':
+      return `cancelled: ${String(a.payload.title ?? '')}`;
+    case 'STUCK': {
+      const reasons = (a.payload.reasons as string[] | undefined) ?? [];
+      const why = [
+        reasons.includes('NEXT_STEP_OVERDUE') ? 'its next step is overdue' : null,
+        reasons.includes('SLA') ? 'no activity within the stage SLA' : null,
+      ].filter(Boolean);
+      return `flagged it as stuck: ${why.join(' and ')}`;
+    }
     default:
       return a.type.toLowerCase().replaceAll('_', ' ');
   }
@@ -416,7 +498,7 @@ function Timeline({
                   </Badge>
                 ) : null}
               </p>
-              {a.type === 'NOTE' ? (
+              {(a.type === 'NOTE' || a.type === 'TOUCH') && a.payload.text ? (
                 <p className="whitespace-pre-wrap">{String(a.payload.text ?? '')}</p>
               ) : null}
               <time dateTime={a.occurredAt} className="caption tabular text-obsidian/75">
@@ -430,6 +512,134 @@ function Timeline({
         <Button variant="ghost" size="sm" onClick={() => load(cursor)}>
           Show older
         </Button>
+      ) : null}
+    </Card>
+  );
+}
+
+/** Open next steps on the lead, "Log a touch", and a form to add a next step without a touch. */
+function NextSteps({
+  lead,
+  tasks,
+  lookups,
+  editable,
+  open,
+  onTouch,
+  onChanged,
+}: {
+  lead: LeadDto;
+  tasks: TaskDto[];
+  lookups: Lookups;
+  editable: boolean;
+  open: boolean;
+  onTouch: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const { org, me } = useOrg();
+  const [adding, setAdding] = useState(false);
+  const [values, setValues] = useState(() => blankNextStep(org.timezone, me.id));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setErrors({});
+    try {
+      await api(`/v1/orgs/${org.id}/tasks`, {
+        method: 'POST',
+        body: { leadId: lead.id, ...nextStepBody(values, org.timezone) },
+      });
+      toast('Next step set');
+      setAdding(false);
+      setValues(blankNextStep(org.timezone, me.id));
+      await onChanged();
+    } catch (e) {
+      if (e instanceof ApiProblem && e.status === 422) setErrors(e.fieldErrors);
+      toast(problemMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function done(task: TaskDto) {
+    setBusy(task.id);
+    try {
+      await api(`/v1/orgs/${org.id}/tasks/${task.id}`, {
+        method: 'PATCH',
+        body: { status: 'DONE' },
+      });
+      toast(`Done: ${task.title}`);
+      await onChanged();
+    } catch (e) {
+      toast(problemMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card density="dense" className="flex flex-col gap-4" aria-labelledby="next-steps-title">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="next-steps-title" className="display text-heading">
+          Next steps
+        </h2>
+        {editable ? (
+          <Button onClick={onTouch}>
+            <PhoneCall aria-hidden className="size-4" strokeWidth={1.75} />
+            Log a touch
+          </Button>
+        ) : null}
+      </div>
+      {tasks.length ? (
+        <ul aria-label="Open next steps" className="flex flex-col gap-2">
+          {tasks.map((t) => (
+            <TaskItem
+              key={t.id}
+              task={t}
+              slug={org.slug}
+              timezone={org.timezone}
+              showLead={false}
+              {...(editable ? { onDone: done } : {})}
+              busy={busy === t.id}
+            />
+          ))}
+        </ul>
+      ) : open ? (
+        <p className="rounded-medium bg-sulfur px-5 py-3 text-body-sm">
+          No next step yet. Every open lead needs one with a date.
+        </p>
+      ) : (
+        <p className="text-body-sm text-obsidian/80">The lead is closed and needs no next step.</p>
+      )}
+      {editable && open ? (
+        adding ? (
+          <form onSubmit={add} className="flex flex-col gap-4">
+            <NextStepFields
+              values={values}
+              onChange={setValues}
+              assignees={lookups.assignees}
+              canAssign={org.role !== 'REP'}
+              timezone={org.timezone}
+              errors={errors}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" variant="secondary" loading={saving}>
+                Add next step
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div>
+            <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
+              Add a next step without a touch
+            </Button>
+          </div>
+        )
       ) : null}
     </Card>
   );

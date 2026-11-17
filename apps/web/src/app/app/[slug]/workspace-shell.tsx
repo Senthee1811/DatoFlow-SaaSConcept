@@ -3,7 +3,7 @@
 import { can, ROLE_LABEL, type Capability } from '@datoflow/domain';
 import type { OrgDto } from '@datoflow/shared';
 import { buttonClass, cn, Logo, Select } from '@datoflow/ui';
-import { Menu } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -19,11 +19,45 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '', label: 'Overview' },
+  { href: '/day', label: 'My day' },
   { href: '/leads', label: 'Leads' },
   { href: '/members', label: 'Members', capability: 'members.manage' },
   { href: '/audit', label: 'Audit log', capability: 'audit.view' },
   { href: '/settings', label: 'Settings', capability: 'org.settings' },
 ];
+
+/** Fired after notifications are read, so the bell updates without waiting for its next poll. */
+export const NOTIFICATIONS_CHANGED = 'datoflow:notifications-changed';
+const POLL_MS = 30_000;
+
+/** The unread count for the bell. Polls every 30 s while the tab is visible (NOT-02 for now). */
+function useUnread(orgId: string | undefined) {
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    if (!orgId) return;
+    let stopped = false;
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const res = await api<{ unread: number }>(`/v1/orgs/${orgId}/notifications/unread-count`);
+        if (!stopped) setUnread(res.unread);
+      } catch {
+        /* The next poll tries again. */
+      }
+    };
+    void poll();
+    const timer = setInterval(poll, POLL_MS);
+    window.addEventListener(NOTIFICATIONS_CHANGED, poll);
+    document.addEventListener('visibilitychange', poll);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      window.removeEventListener(NOTIFICATIONS_CHANGED, poll);
+      document.removeEventListener('visibilitychange', poll);
+    };
+  }, [orgId]);
+  return unread;
+}
 
 export function WorkspaceShell({ slug, children }: { slug: string; children: ReactNode }) {
   const router = useRouter();
@@ -50,6 +84,7 @@ export function WorkspaceShell({ slug, children }: { slug: string; children: Rea
   }, [load]);
 
   const org = state?.orgs.find((o) => o.slug === slug);
+  const unread = useUnread(org?.id);
 
   // Opening a workspace by its address makes it the active one on this session (ORG-02).
   useEffect(() => {
@@ -109,6 +144,22 @@ export function WorkspaceShell({ slug, children }: { slug: string; children: Rea
             {links(false)}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <Link
+              href={`${base}/notifications`}
+              aria-current={pathname === `${base}/notifications` ? 'page' : undefined}
+              aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
+              className={cn(
+                buttonClass('ghost', 'sm', 'min-h-11 min-w-11 px-3'),
+                pathname === `${base}/notifications` && 'bg-obsidian text-chalk hover:bg-obsidian',
+              )}
+            >
+              <Bell aria-hidden className="size-4" strokeWidth={1.75} />
+              {unread ? (
+                <span className="tabular rounded-pills bg-ember px-2 text-body-sm text-obsidian">
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              ) : null}
+            </Link>
             <label className="sr-only" htmlFor="workspace-switcher">
               Workspace
             </label>

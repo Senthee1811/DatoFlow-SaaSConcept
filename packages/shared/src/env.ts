@@ -27,6 +27,10 @@ export const serverEnvSchema = z
     SMTP_URL: optional,
     EMAIL_FROM: z.string().default('DatoFlow <no-reply@datoflow.local>'),
     EMAIL_DAILY_LIMIT: z.coerce.number().int().positive().default(100),
+    /** Stuck-lead radar sweep (TASK-03): every 5 minutes. */
+    RADAR_INTERVAL_SECONDS: z.coerce.number().int().min(5).default(300),
+    /** Reminder, digest and email run (TASK-04): every minute. */
+    REMINDER_INTERVAL_SECONDS: z.coerce.number().int().min(5).default(60),
     RATE_LIMIT_AUTH_PER_MIN: z.coerce.number().int().positive().default(5),
     RATE_LIMIT_API_PER_MIN: z.coerce.number().int().positive().default(300),
     CAPTCHA_PROVIDER: z.enum(['noop', 'turnstile']).default('noop'),

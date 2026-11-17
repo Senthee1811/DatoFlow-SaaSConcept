@@ -3,20 +3,21 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Db, Prisma } from '@datoflow/db';
 import { can, endOfDayInZone, startOfDayInZone } from '@datoflow/domain';
 import {
+  createActivitySchema,
   createLeadSchema,
-  createNoteSchema,
   idParam,
   leadListQuerySchema,
   pageQuerySchema,
   updateLeadSchema,
   type ActivityDto,
+  type CreateActivityInput,
   type CreateLeadInput,
-  type CreateNoteInput,
   type LeadDto,
   type LeadListQuery,
   type LeadSummaryDto,
   type Page,
   type PageQuery,
+  type TouchResultDto,
   type UpdateLeadInput,
 } from '@datoflow/shared';
 import { CurrentMembership, CurrentUser, OrgRoute } from '../auth/guards.js';
@@ -24,6 +25,7 @@ import { ApiError } from '../http/errors.js';
 import { pageArgs, toPage } from '../http/pagination.js';
 import type { AuthUser, Membership } from '../http/request.js';
 import { IdParam, ZBody, ZQuery } from '../http/validation.js';
+import { logTouch } from '../tasks/task-service.js';
 import { DB } from '../tokens.js';
 import {
   addNote,
@@ -84,8 +86,14 @@ export function leadWhere(query: LeadListQuery, member: Member, org: OrgContext,
   if (query.status === 'open') and.push({ stage: { kind: 'OPEN' } });
   if (query.status === 'won') and.push({ stage: { kind: 'WON' } });
   if (query.status === 'lost') and.push({ stage: { kind: 'LOST' } });
-  if (query.stuck === true) and.push({ slaDueAt: { lt: now } });
-  if (query.stuck === false) and.push({ OR: [{ slaDueAt: null }, { slaDueAt: { gte: now } }] });
+  // Stuck: no activity past the stage SLA, or an overdue next step (TASK-03). Both deadlines are
+  // null on closed leads, and archived leads are filtered above.
+  if (query.stuck === true)
+    and.push({ OR: [{ slaDueAt: { lt: now } }, { nextStepDueAt: { lt: now } }] });
+  if (query.stuck === false) {
+    and.push({ OR: [{ slaDueAt: null }, { slaDueAt: { gte: now } }] });
+    and.push({ OR: [{ nextStepDueAt: null }, { nextStepDueAt: { gte: now } }] });
+  }
   return { AND: and };
 }
 
@@ -254,16 +262,18 @@ export class LeadsController {
   @OrgRoute('leads.view')
   @ApiOperation({
     summary:
-      'Add a note to the timeline. Calls, emails and meetings arrive with the next-step rule',
+      'Add a note, or log a touch (call, email, WhatsApp, meeting). A touch on an open lead needs a ' +
+      'new next step unless it closes the lead as Won or Lost: 422 NEXT_STEP_REQUIRED (TASK-02)',
   })
   addActivity(
     @CurrentMembership() membership: Membership,
     @CurrentUser() user: AuthUser,
     @IdParam('leadId') leadId: string,
-    @ZBody(createNoteSchema) body: CreateNoteInput,
-  ): Promise<ActivityDto> {
+    @ZBody(createActivitySchema) body: CreateActivityInput,
+  ): Promise<ActivityDto | TouchResultDto> {
     return this.ctx(membership, user, async (tx, org, member) => {
       const lead = await editableLead(tx, member, leadId);
+      if (body.type === 'TOUCH') return logTouch(tx, org, member, lead, body);
       await addNote(tx, org, member, lead, body.text);
       const latest = await tx.leadActivity.findFirstOrThrow({
         where: { leadId, type: 'NOTE' },

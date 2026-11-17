@@ -17,6 +17,7 @@ export const ErrorCode = {
   DEAL_VALUE_REQUIRED: 'DEAL_VALUE_REQUIRED',
   STAGE_NOT_EMPTY: 'STAGE_NOT_EMPTY',
   INVALID_STAGES: 'INVALID_STAGES',
+  NEXT_STEP_REQUIRED: 'NEXT_STEP_REQUIRED',
   INTERNAL: 'INTERNAL',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

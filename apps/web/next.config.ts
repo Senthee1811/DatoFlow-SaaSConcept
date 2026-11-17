@@ -11,7 +11,8 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
-  "connect-src 'self'",
+  // In development only, local WebSockets are allowed for dev tooling (e.g. Console Ninja).
+  `connect-src 'self'${dev ? ' ws://localhost:* ws://127.0.0.1:*' : ''}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

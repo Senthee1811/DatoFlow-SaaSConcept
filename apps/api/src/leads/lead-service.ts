@@ -1,4 +1,4 @@
-import type { Tx } from '@datoflow/db';
+import { refreshLeads, type Db, type Tx } from '@datoflow/db';
 import {
   actorName,
   canEditLead,
@@ -11,6 +11,7 @@ import {
   nameCompanyKey,
   normaliseContact,
   slaDueAt,
+  stuckReasons,
   type ActivityType,
   type ActorType,
   type DuplicateKeys,
@@ -75,15 +76,37 @@ export function memberOf(user: { id: string; name: string }, role: Role, org: Or
   };
 }
 
+/** Runs `fn` in a tenant transaction with the organization and the caller as a member. */
+export function withMember<T>(
+  db: Db,
+  membership: { organizationId: string; role: Role },
+  user: { id: string; name: string },
+  fn: (tx: Tx, org: OrgContext, member: Member) => Promise<T>,
+): Promise<T> {
+  return db.withTenant(membership.organizationId, async (tx) => {
+    const org = await loadOrgContext(tx, membership.organizationId);
+    return fn(tx, org, memberOf(user, membership.role, org));
+  });
+}
+
 const LEAD_INCLUDE = {
   owner: { select: { name: true } },
   stage: { select: { kind: true, slaHours: true } },
 } as const;
 
-type LeadRow = NonNullable<Awaited<ReturnType<typeof findLead>>>;
+export type LeadRow = NonNullable<Awaited<ReturnType<typeof findLead>>>;
 
 async function findLead(tx: Tx, id: string) {
   return tx.lead.findUnique({ where: { id }, include: LEAD_INCLUDE });
+}
+
+/**
+ * Recomputes the lead's next step and runs the stuck-lead radar on it (TASK-03), then reads it
+ * back. Every change to a lead or its tasks ends here.
+ */
+export async function refreshLead(tx: Tx, id: string, now = new Date()): Promise<LeadRow> {
+  await refreshLeads(tx, [id], now);
+  return (await findLead(tx, id))!;
 }
 
 /** A lead the member can see, or 404. A lead outside a Rep's scope looks like one that does not exist. */
@@ -103,6 +126,15 @@ export async function editableLead(tx: Tx, member: Member, id: string): Promise<
 }
 
 export function toLeadSummary(lead: LeadRow, now = new Date()): LeadSummaryDto {
+  const reasons = stuckReasons(
+    {
+      kind: lead.stage.kind,
+      archivedAt: lead.archivedAt,
+      slaDueAt: lead.slaDueAt,
+      nextStepDueAt: lead.nextStepDueAt,
+    },
+    now,
+  );
   return {
     id: lead.id,
     name: lead.name,
@@ -117,9 +149,11 @@ export function toLeadSummary(lead: LeadRow, now = new Date()): LeadSummaryDto {
     dealValue: lead.dealValue === null ? null : Number(lead.dealValue),
     currency: lead.currency,
     isSample: lead.isSample,
-    stuck:
-      lead.archivedAt === null && lead.slaDueAt !== null && lead.slaDueAt.getTime() < now.getTime(),
+    stuck: reasons.length > 0,
+    stuckReasons: reasons,
+    stuckAt: lead.stuckAt?.toISOString() ?? null,
     slaDueAt: lead.slaDueAt?.toISOString() ?? null,
+    nextStepDueAt: lead.nextStepDueAt?.toISOString() ?? null,
     lastActivityAt: lead.lastActivityAt.toISOString(),
     archivedAt: lead.archivedAt?.toISOString() ?? null,
     createdAt: lead.createdAt.toISOString(),
@@ -185,7 +219,7 @@ export function toActivityDto(a: {
 // Writes
 // ---------------------------------------------------------------------------
 
-async function activity(
+export async function activity(
   tx: Tx,
   organizationId: string,
   leadId: string,
@@ -403,7 +437,7 @@ export async function createLead(
     priority: lead.priority,
     isSample: false,
   });
-  return lead;
+  return refreshLead(tx, lead.id, now);
 }
 
 export async function updateLead(
@@ -545,7 +579,7 @@ export async function updateLead(
   if (['name', 'company', 'email', 'phone'].some((f) => f in fields)) {
     await detectDuplicates(tx, org.id, updated, member.actor);
   }
-  return updated;
+  return refreshLead(tx, lead.id, now);
 }
 
 export async function setArchived(
@@ -562,7 +596,7 @@ export async function setArchived(
     include: LEAD_INCLUDE,
   });
   await activity(tx, org.id, lead.id, member.actor, archived ? 'ARCHIVED' : 'RESTORED');
-  return updated;
+  return refreshLead(tx, updated.id);
 }
 
 export async function addNote(
@@ -578,4 +612,5 @@ export async function addNote(
     where: { id: lead.id },
     data: { lastActivityAt: now, slaDueAt: slaDueAt(now, lead.stage.slaHours, lead.stage.kind) },
   });
+  await refreshLead(tx, lead.id, now);
 }

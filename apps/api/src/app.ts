@@ -9,7 +9,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, NestFactory } from '@nestjs/cor
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
-import { createEmailAdapter, type EmailAdapter } from '@datoflow/adapters';
+import { countingEmailAdapter, createEmailAdapter, type EmailAdapter } from '@datoflow/adapters';
 import { createDb, type Db } from '@datoflow/db';
 import { ErrorCode, LOG_REDACT_PATHS, type ServerEnv } from '@datoflow/shared';
 import { toNodeHandler } from 'better-auth/node';
@@ -37,6 +37,8 @@ import { OrgsController } from './orgs/orgs.controller.js';
 import { WorkspaceController } from './orgs/workspace.controller.js';
 import { LeadsController } from './leads/leads.controller.js';
 import { LossReasonsController, PipelinesController } from './leads/pipelines.controller.js';
+import { NotificationsController } from './tasks/notifications.controller.js';
+import { TasksController } from './tasks/tasks.controller.js';
 import { AUTH, DB, EMAIL, ENV, LOGGER, REDIS } from './tokens.js';
 
 export interface AppDeps {
@@ -86,6 +88,8 @@ class AppModule {
         LeadsController,
         PipelinesController,
         LossReasonsController,
+        TasksController,
+        NotificationsController,
       ],
       providers: [
         { provide: ENV, useValue: deps.env },
@@ -135,7 +139,8 @@ export async function createApp(env: ServerEnv, options: CreateAppOptions = {}) 
   const db = createDb(env.DATABASE_URL);
   const redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 1, lazyConnect: false });
   redis.on('error', (err) => logger.warn({ err: err.message }, 'redis error'));
-  const email = options.email ?? createEmailAdapter(env);
+  // Every email counts against the provider's daily limit, shared with the worker.
+  const email = countingEmailAdapter(options.email ?? createEmailAdapter(env), redis);
   const auth = createAuth({ env, db, redis, email, logger });
 
   const app = await NestFactory.create<NestExpressApplication>(

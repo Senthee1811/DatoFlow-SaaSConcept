@@ -5,10 +5,17 @@ export interface EmailMessage {
   subject: string;
   /** Plain text body. Links are written out in full. */
   text: string;
+  /**
+   * The same key always means the same email. A provider that honours it (Resend, for 24 hours)
+   * sends it once however often it is asked, so a send interrupted by a crash can be retried.
+   */
+  idempotencyKey?: string;
 }
 
 export interface EmailAdapter {
   readonly name: 'console' | 'smtp' | 'resend';
+  /** Whether the provider drops a repeat of the same idempotency key. */
+  readonly idempotent: boolean;
   send(message: EmailMessage): Promise<{ id: string }>;
 }
 
@@ -29,7 +36,8 @@ export function consoleEmailAdapter(
   let n = 0;
   return {
     name: 'console',
-    async send(message) {
+    idempotent: false,
+    async send({ idempotencyKey: _key, ...message }) {
       const id = `console-${++n}`;
       write(JSON.stringify({ level: 30, msg: 'email', provider: 'console', id, from, ...message }));
       return { id };
@@ -41,8 +49,14 @@ export function smtpEmailAdapter(from: string, smtpUrl: string): EmailAdapter {
   const transport = nodemailer.createTransport(smtpUrl);
   return {
     name: 'smtp',
-    async send(message) {
-      const info = await transport.sendMail({ from, ...message });
+    idempotent: false,
+    async send({ idempotencyKey, ...message }) {
+      const info = await transport.sendMail({
+        from,
+        ...message,
+        // Resend's SMTP relay honours this header; other servers ignore it.
+        ...(idempotencyKey ? { headers: { 'Resend-Idempotency-Key': idempotencyKey } } : {}),
+      });
       return { id: String(info.messageId) };
     },
   };
@@ -55,10 +69,15 @@ export function resendEmailAdapter(
 ): EmailAdapter {
   return {
     name: 'resend',
+    idempotent: true,
     async send(message) {
       const res = await fetchImpl('https://api.resend.com/emails', {
         method: 'POST',
-        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          'content-type': 'application/json',
+          ...(message.idempotencyKey ? { 'idempotency-key': message.idempotencyKey } : {}),
+        },
         body: JSON.stringify({
           from,
           to: [message.to],

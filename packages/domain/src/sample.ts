@@ -254,3 +254,37 @@ export function buildSampleWorkspace(seed = 20261116): SampleWorkspace {
   };
   return { reps: SAMPLE_REPS, leads };
 }
+
+export interface SampleNextStep {
+  leadIndex: number;
+  title: string;
+  type: 'CALL' | 'EMAIL' | 'WHATSAPP' | 'MEETING';
+  dueAt: Date;
+}
+
+const STEP_BY_STAGE: { title: string; type: SampleNextStep['type'] }[] = [
+  { title: 'First call to qualify', type: 'CALL' },
+  { title: 'Send the case studies on WhatsApp', type: 'WHATSAPP' },
+  { title: 'Discovery meeting', type: 'MEETING' },
+  { title: 'Follow up on the proposal', type: 'EMAIL' },
+];
+
+/**
+ * Next steps for the sample agency: one per open, assigned lead, except every seventh lead, which
+ * has none. About one in five is overdue; the rest fall over the next three days.
+ */
+export function sampleNextSteps(leads: SampleLead[], now: Date): SampleNextStep[] {
+  const HOUR = 3_600_000;
+  return leads.flatMap((lead, i) => {
+    if (lead.stageIndex > 3 || lead.ownerIndex === null || i % 7 === 3) return [];
+    const overdue = i % 5 === 2;
+    const hours = overdue ? -(2 + (i % 26)) : 1 + ((i * 5) % 71);
+    return [
+      {
+        leadIndex: i,
+        ...STEP_BY_STAGE[lead.stageIndex]!,
+        dueAt: new Date(now.getTime() + hours * HOUR),
+      },
+    ];
+  });
+}

@@ -23,6 +23,9 @@ jobs:
     env:
       # Every browser in the run shares one IP, so the auth limit is raised for the stack under test.
       RATE_LIMIT_AUTH_PER_MIN: '500'
+      # The radar and reminder jobs run every few seconds, so UF-2 and UF-8 do not wait minutes.
+      RADAR_INTERVAL_SECONDS: '10'
+      REMINDER_INTERVAL_SECONDS: '5'
       E2E_BASE_URL: http://localhost:3000
       MAILPIT_URL: http://localhost:8025
     steps:

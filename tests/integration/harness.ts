@@ -1,5 +1,6 @@
 import type { EmailAdapter, EmailMessage } from '@datoflow/adapters';
 import { createApp } from '@datoflow/api';
+import { createWorker } from '@datoflow/worker';
 import { loadServerEnv, type ServerEnv } from '@datoflow/shared';
 import type { AddressInfo } from 'node:net';
 import pg from 'pg';
@@ -10,6 +11,7 @@ export const APP_URL = 'http://localhost:3000';
 /** Captures every email the API sends. */
 export class Outbox implements EmailAdapter {
   readonly name = 'console' as const;
+  readonly idempotent = false;
   readonly sent: EmailMessage[] = [];
 
   async send(message: EmailMessage) {
@@ -226,4 +228,37 @@ export async function addMember(
 /** Moves an organization to another plan, for tests that need more seats than Free has. */
 export async function setPlan(app: TestApp, orgId: string, planCode: string) {
   await app.sql.query('UPDATE "Organization" SET "planCode" = $1 WHERE id = $2', [planCode, orgId]);
+}
+
+export type TestWorker = Awaited<ReturnType<typeof createWorker>> & { outbox: Outbox };
+
+/**
+ * Starts the real worker (BullMQ schedulers included) against the test database and Redis.
+ * Tests call `worker.jobs` directly with a chosen time instead of waiting for the schedule.
+ */
+export async function startWorker(
+  app: TestApp,
+  overrides: Record<string, string> = {},
+  email: EmailAdapter & { sent?: EmailMessage[] } = new Outbox(),
+): Promise<TestWorker> {
+  const env = loadServerEnv({
+    ...Object.fromEntries(
+      Object.entries(app.env).map(([k, v]) => [k, v === undefined ? undefined : String(v)]),
+    ),
+    // Long intervals: the schedulers exist, but tests drive the jobs themselves.
+    RADAR_INTERVAL_SECONDS: '3600',
+    REMINDER_INTERVAL_SECONDS: '3600',
+    EMAIL_DAILY_LIMIT: '100000',
+    ...overrides,
+  });
+  const worker = await createWorker(env, {
+    email,
+    ...(process.env.TEST_LOG_LEVEL ? { logLevel: process.env.TEST_LOG_LEVEL } : {}),
+  });
+  return Object.assign(worker, { outbox: email as Outbox });
+}
+
+/** An ISO time `minutes` from now. */
+export function inMinutes(minutes: number, from = new Date()) {
+  return new Date(from.getTime() + minutes * 60_000).toISOString();
 }

@@ -40,3 +40,25 @@ export function endOfDayInZone(isoDate: string, timeZone: string): Date {
   const next = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
   return startOfDayInZone(next, timeZone);
 }
+
+/**
+ * A wall-clock date-time typed in the organization's timezone (`YYYY-MM-DDTHH:mm`, as a
+ * datetime-local input gives it) as the UTC instant it names.
+ */
+export function zonedDateTimeToUtc(local: string, timeZone: string): Date {
+  const [date, time = '00:00'] = local.split('T') as [string, string?];
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const [hh, mm] = time.split(':').map(Number) as [number, number];
+  const guess = Date.UTC(y, m - 1, d, hh, mm);
+  const first = guess - timeZoneOffsetMs(new Date(guess), timeZone);
+  // A second pass settles times near a daylight-saving change.
+  return new Date(guess - timeZoneOffsetMs(new Date(first), timeZone));
+}
+
+/** An instant as `YYYY-MM-DDTHH:mm` in the timezone, for a datetime-local input. */
+export function utcToZonedInput(instant: Date, timeZone: string): string {
+  const offset = timeZoneOffsetMs(instant, timeZone);
+  return new Date(Math.floor(instant.getTime() / 60_000) * 60_000 + offset)
+    .toISOString()
+    .slice(0, 16);
+}

@@ -327,9 +327,15 @@ importers:
 
   apps/worker:
     dependencies:
+      '@datoflow/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
       '@datoflow/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@datoflow/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@datoflow/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -486,9 +492,15 @@ importers:
       '@datoflow/db':
         specifier: workspace:*
         version: link:../packages/db
+      '@datoflow/domain':
+        specifier: workspace:*
+        version: link:../packages/domain
       '@datoflow/shared':
         specifier: workspace:*
         version: link:../packages/shared
+      '@datoflow/worker':
+        specifier: workspace:*
+        version: link:../apps/worker
     devDependencies:
       '@axe-core/playwright':
         specifier: 4.14.0
@@ -502,6 +514,9 @@ importers:
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
+      ioredis:
+        specifier: 5.11.1
+        version: 5.11.1
       pg:
         specifier: 8.23.1
         version: 8.23.1

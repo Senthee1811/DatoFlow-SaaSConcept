@@ -130,6 +130,13 @@ export type LeadFilters = z.infer<typeof leadFiltersSchema>;
 export const preferencesSchema = z.strictObject({
   leadFilters: leadFiltersSchema.optional(),
   leadView: z.enum(['table', 'board']).optional(),
+  /** How reminders reach you (UF-8). In-app reminders are always on. Both default to on. */
+  notifications: z
+    .strictObject({
+      reminderEmail: z.boolean().optional(),
+      dailyDigest: z.boolean().optional(),
+    })
+    .optional(),
 });
 export type Preferences = z.infer<typeof preferencesSchema>;
 
@@ -216,7 +223,13 @@ export interface LeadSummaryDto {
   currency: string;
   isSample: boolean;
   stuck: boolean;
+  /** Why it is stuck: no activity past the stage SLA, an overdue next step, or both. */
+  stuckReasons: ('SLA' | 'NEXT_STEP_OVERDUE')[];
+  /** When the radar flagged it. Null until the radar has seen it stuck. */
+  stuckAt: string | null;
   slaDueAt: string | null;
+  /** Due time of the earliest open next step, or null when it has none. */
+  nextStepDueAt: string | null;
   lastActivityAt: string;
   archivedAt: string | null;
   createdAt: string;

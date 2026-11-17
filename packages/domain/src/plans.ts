@@ -7,12 +7,16 @@ export type PlanCode = (typeof PLAN_CODES)[number];
 
 export type LimitName = 'users' | 'leads' | 'activeWorkflows' | 'executionsPerMonth';
 
+export type FeatureName = 'emailReminders';
+
 export interface Plan {
   code: PlanCode;
   name: string;
   usdPerMonth: number;
   /** `null` means unlimited. */
   limits: Record<LimitName, number | null>;
+  /** Features a plan switches on. Each one is named in `adds`. */
+  features: Record<FeatureName, boolean>;
   adds: string[];
 }
 
@@ -22,6 +26,7 @@ export const PLANS: Record<PlanCode, Plan> = {
     name: 'Free',
     usdPerMonth: 0,
     limits: { users: 2, leads: 250, activeWorkflows: 1, executionsPerMonth: 500 },
+    features: { emailReminders: false },
     adds: ['Sample workspace', '1 capture form'],
   },
   starter: {
@@ -29,6 +34,7 @@ export const PLANS: Record<PlanCode, Plan> = {
     name: 'Starter',
     usdPerMonth: 19,
     limits: { users: 5, leads: 2_500, activeWorkflows: 5, executionsPerMonth: 5_000 },
+    features: { emailReminders: true },
     adds: ['Email reminders', 'CSV import and export'],
   },
   growth: {
@@ -36,6 +42,7 @@ export const PLANS: Record<PlanCode, Plan> = {
     name: 'Growth',
     usdPerMonth: 49,
     limits: { users: 15, leads: 15_000, activeWorkflows: 25, executionsPerMonth: 50_000 },
+    features: { emailReminders: true },
     adds: ['Webhooks', 'Per-stage SLAs', 'Analytics export'],
   },
   agency: {
@@ -43,6 +50,7 @@ export const PLANS: Record<PlanCode, Plan> = {
     name: 'Agency',
     usdPerMonth: 99,
     limits: { users: 25, leads: 50_000, activeWorkflows: null, executionsPerMonth: 200_000 },
+    features: { emailReminders: true },
     adds: ['Up to 10 client workspaces', 'Client report'],
   },
 };
@@ -68,4 +76,9 @@ export function checkLimit(
 /** A seat is a member or a pending invitation, so an invite can never overbook the plan. */
 export function checkSeats(planCode: string, members: number, pendingInvitations: number) {
   return checkLimit(planCode, 'users', members + pendingInvitations);
+}
+
+/** Whether the organization's plan includes a feature, such as email reminders (Starter and up). */
+export function hasFeature(planCode: string, feature: FeatureName): boolean {
+  return planFor(planCode).features[feature];
 }

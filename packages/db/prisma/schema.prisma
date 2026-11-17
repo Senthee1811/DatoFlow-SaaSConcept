@@ -66,6 +66,34 @@ enum DuplicateStatus {
   DISMISSED
 }
 
+enum TaskType {
+  CALL
+  EMAIL
+  WHATSAPP
+  MEETING
+  OTHER
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+/// Email deliveries move PENDING → SENDING → SENT, or end SKIPPED or FAILED. In-app ones are SENT.
+enum DeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  SKIPPED
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // Auth-provider tables. Better Auth owns their shape. They are not tenant tables.
 // ---------------------------------------------------------------------------
@@ -79,10 +107,12 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  sessions    Session[]
-  accounts    Account[]
-  memberships OrganizationMembership[]
-  ownedLeads  Lead[]                   @relation("LeadOwner")
+  sessions      Session[]
+  accounts      Account[]
+  memberships   OrganizationMembership[]
+  ownedLeads    Lead[]                   @relation("LeadOwner")
+  tasks         Task[]                   @relation("TaskAssignee")
+  notifications Notification[]
 }
 
 model Session {
@@ -157,12 +187,14 @@ model Organization {
   /// Soft delete. Hard delete follows 30 days later.
   deletedAt DateTime?
 
-  memberships OrganizationMembership[]
-  invitations Invitation[]
-  pipelines   Pipeline[]
-  auditLogs   AuditLog[]
-  leads       Lead[]
-  lossReasons LossReason[]
+  memberships   OrganizationMembership[]
+  invitations   Invitation[]
+  pipelines     Pipeline[]
+  auditLogs     AuditLog[]
+  leads         Lead[]
+  lossReasons   LossReason[]
+  tasks         Task[]
+  notifications Notification[]
 }
 
 model OrganizationMembership {
@@ -295,6 +327,10 @@ model Lead {
   lastActivityAt  DateTime   @default(now())
   /// lastActivityAt plus the stage SLA, for open leads. Null when closed.
   slaDueAt        DateTime?
+  /// Due time of the earliest open next step. Null for closed or archived leads (TASK-03).
+  nextStepDueAt   DateTime?
+  /// When the stuck-lead radar flagged the lead. Cleared when it recovers.
+  stuckAt         DateTime?
   closedAt        DateTime?
   archivedAt      DateTime?
   createdAt       DateTime   @default(now())
@@ -308,6 +344,7 @@ model Lead {
   stageHistory          StageHistory[]
   duplicatesAsLead      LeadDuplicate[] @relation("DuplicateLead")
   duplicatesAsCandidate LeadDuplicate[] @relation("DuplicateCandidate")
+  tasks                 Task[]
 
   @@index([organizationId, stageId])
   @@index([organizationId, ownerId])
@@ -316,6 +353,62 @@ model Lead {
   @@index([organizationId, createdAt])
   @@index([organizationId, nameCompanyKey])
   @@index([organizationId, slaDueAt])
+  @@index([organizationId, nextStepDueAt])
+}
+
+/// A task on a lead (TASK-01). An open one with a due time and an assignee is a next step.
+model Task {
+  id             String     @id @default(uuid())
+  organizationId String
+  leadId         String
+  title          String
+  type           TaskType
+  dueAt          DateTime
+  priority       Priority   @default(NORMAL)
+  /// A member of the organization. Null only when the person's account was deleted.
+  assigneeId     String?
+  status         TaskStatus @default(OPEN)
+  completedAt    DateTime?
+  createdById    String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignee     User?        @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, assigneeId, status, dueAt])
+  @@index([organizationId, leadId, status])
+  @@index([status, dueAt])
+}
+
+/// In-app notifications (NOT-01), and the delivery record of every reminder and digest.
+/// `dedupeKey` makes each one happen once (TASK-04: task + type + due time).
+model Notification {
+  id             String              @id @default(uuid())
+  organizationId String
+  userId         String
+  kind           String
+  channel        NotificationChannel
+  payload        Json                @default("{}")
+  dedupeKey      String?             @unique
+  status         DeliveryStatus      @default(SENT)
+  /// Email only: not sent before this time (the daily budget queues overflow to the next day).
+  sendAfter      DateTime            @default(now())
+  /// Email only: after this time it is no longer useful, such as a reminder for a step now due.
+  staleAt        DateTime?
+  claimedAt      DateTime?
+  sentAt         DateTime?
+  attempts       Int                 @default(0)
+  error          String?
+  readAt         DateTime?
+  createdAt      DateTime            @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, readAt])
+  @@index([status, sendAfter])
 }
 
 /// A possible duplicate. Shown with a link; never merged automatically (LEAD-03).

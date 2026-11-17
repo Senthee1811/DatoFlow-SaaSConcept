@@ -49,17 +49,24 @@ export class WorkspaceController {
 
   @Put('me/preferences')
   @OrgRoute()
-  @ApiOperation({ summary: 'Save your filters and views in this workspace' })
+  @ApiOperation({
+    summary:
+      'Save your filters, views and reminder choices in this workspace. Sections left out stay as they are',
+  })
   putPreferences(
     @CurrentMembership() membership: Membership,
     @ZBody(preferencesSchema) body: Preferences,
   ): Promise<Preferences> {
     return this.db.withTenant(membership.organizationId, async (tx) => {
+      const row = await tx.organizationMembership.findUniqueOrThrow({
+        where: { id: membership.id },
+      });
+      const merged = { ...(preferencesSchema.safeParse(row.preferences).data ?? {}), ...body };
       await tx.organizationMembership.update({
         where: { id: membership.id },
-        data: { preferences: body },
+        data: { preferences: merged },
       });
-      return body;
+      return merged;
     });
   }
 

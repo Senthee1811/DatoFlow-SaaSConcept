@@ -2,7 +2,7 @@
 
 ## Phase 3 — Tasks and the next-step rule (2026-11-17)
 
-**Gate result: pass locally; GitHub Actions not yet run.** The full suite ran against the Compose stack on a Windows/Docker Desktop machine (web on port 3100, `RADAR_INTERVAL_SECONDS=10`, `REMINDER_INTERVAL_SECONDS=5`, as in the E2E workflow).
+**Gate result: pass on GitHub Actions** — [CI run 44022095532](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/44022095532) (lint, types, unit tests with coverage, build, integration and cross-tenant suite including the reminder restart tests, linux/arm64 images) and [E2E run 44022095570](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/44022095570) (UF-2, UF-8 and the earlier flows against a fresh no-secrets Compose stack, desktop and phone). It also passed locally first, on Docker Desktop for Windows.
 
 | Gate check                                          | Result | How it was run                                                                                                                                                              |
 | --------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

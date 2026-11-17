@@ -116,17 +116,18 @@ test('UF-3: a workflow built in the UI runs, skips, goes DEAD with Admins notifi
     source: 'EVENT',
   });
 
-  // The Owner is told, in the notification centre.
+  // The Owner is told, in the notification centre. The first workflow's own message may arrive
+  // first, so wait for this one in particular.
   const bell = page.getByRole('link', { name: /^Notifications, \d+ unread$/ });
-  await expect(async () => {
-    await page.reload();
-    await expect(bell).toBeVisible({ timeout: 5_000 });
-  }).toPass({ timeout: 60_000, intervals: [2_000] });
-  await bell.click();
   const list = page.getByRole('list', { name: 'Notifications' });
-  await expect(list).toContainText(
-    'Workflow “Welcome email” gave up on Dilini Fernando: The lead has no email address',
-  );
+  await expect(async () => {
+    await page.goto(`/app/${slug}/leads`);
+    await bell.click({ timeout: 5_000 });
+    await expect(list).toContainText(
+      'Workflow “Welcome email” gave up on Dilini Fernando: The lead has no email address',
+      { timeout: 2_000 },
+    );
+  }).toPass({ timeout: 60_000, intervals: [2_000] });
   await list.getByRole('link', { name: 'See the run and retry' }).click();
 
   await expect(page.getByRole('heading', { level: 1, name: 'Welcome email' })).toBeVisible();

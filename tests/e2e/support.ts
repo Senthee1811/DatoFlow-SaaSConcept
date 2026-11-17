@@ -58,6 +58,17 @@ export function local(link: string, baseURL: string) {
 
 /** WCAG 2.2 AA checks with axe (NFR-A11Y-01). */
 export async function expectAccessible(page: Page) {
+  // Colours are checked once settled: a toast caught mid fade-in reads as low contrast.
+  await page.waitForFunction(
+    () =>
+      document
+        .getAnimations()
+        // A loading spinner never ends; only animations that finish are waited for.
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .every((a) => a.playState !== 'running'),
+    undefined,
+    { timeout: 5_000 },
+  );
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();

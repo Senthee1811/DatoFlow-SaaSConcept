@@ -1,4 +1,8 @@
-/** Activity types on a lead's timeline (LEAD-06): changes, notes, touches, tasks and radar flags. */
+/**
+ * Activity types on a lead's timeline (LEAD-06): changes, notes, touches, tasks, radar flags and
+ * workflow actions. A workflow's own changes (assign, stage, task) use the usual type with the
+ * WORKFLOW actor; WORKFLOW_ACTION records the actions with no other entry, such as an email.
+ */
 export const ACTIVITY_TYPES = [
   'CREATED',
   'UPDATED',
@@ -14,6 +18,7 @@ export const ACTIVITY_TYPES = [
   'TASK_COMPLETED',
   'TASK_CANCELLED',
   'STUCK',
+  'WORKFLOW_ACTION',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -54,6 +59,7 @@ export const TRACKED_FIELDS = [
   'dealValue',
   'notes',
   'utm',
+  'tags',
 ] as const;
 export type TrackedField = (typeof TRACKED_FIELDS)[number];
 

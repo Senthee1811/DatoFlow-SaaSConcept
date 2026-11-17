@@ -8,6 +8,7 @@ import { CurrentMembership, OrgRoute } from '../auth/guards.js';
 import type { Membership } from '../http/request.js';
 import { ZBody } from '../http/validation.js';
 import { DB } from '../tokens.js';
+import { retryOnConflict } from '../http/retry.js';
 import { deleteSampleData } from './sample.js';
 
 @ApiTags('Organizations')
@@ -74,15 +75,18 @@ export class WorkspaceController {
   @OrgRoute('org.settings')
   @ApiOperation({ summary: 'Delete the sample agency. Real records stay untouched (ORG-04)' })
   deleteSample(@CurrentMembership() membership: Membership, @Req() req: Request) {
-    return this.db.withTenant(membership.organizationId, async (tx) => {
-      const removed = await deleteSampleData(tx);
-      await audit(tx, membership.organizationId, actorFrom(req), {
-        action: 'sample.deleted',
-        targetType: 'Organization',
-        targetId: membership.organizationId,
-        metadata: removed,
-      });
-      return removed;
-    });
+    // Sample workflows may be running on the sample leads at the same moment.
+    return retryOnConflict(() =>
+      this.db.withTenant(membership.organizationId, async (tx) => {
+        const removed = await deleteSampleData(tx);
+        await audit(tx, membership.organizationId, actorFrom(req), {
+          action: 'sample.deleted',
+          targetType: 'Organization',
+          targetId: membership.organizationId,
+          metadata: removed,
+        });
+        return removed;
+      }),
+    );
   }
 }

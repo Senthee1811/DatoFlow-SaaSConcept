@@ -21,6 +21,15 @@ const ACTIONS: Record<string, string> = {
   'invitation.resent': 'Resent an invitation',
   'invitation.revoked': 'Withdrew an invitation',
   'invitation.accepted': 'Accepted an invitation',
+  'pipeline.updated': 'Changed the pipeline',
+  'loss_reasons.updated': 'Changed the loss reasons',
+  'sample.deleted': 'Deleted the sample data',
+  'workflow.created': 'Created a workflow',
+  'workflow.version_saved': 'Saved a workflow version',
+  'workflow.activated': 'Activated a workflow',
+  'workflow.resumed': 'Resumed a workflow',
+  'workflow.paused': 'Paused a workflow',
+  'workflow.run_retried': 'Retried a workflow run',
 };
 
 function detail(entry: AuditLogDto): string | null {
@@ -30,6 +39,15 @@ function detail(entry: AuditLogDto): string | null {
     return m.role ? `${m.email} as ${String(m.role)}` : m.email;
   }
   if (entry.action === 'org.updated' && Array.isArray(m.fields)) return m.fields.join(', ');
+  if (entry.action === 'workflow.created') return `${String(m.name)}, version 1`;
+  if (entry.action === 'workflow.version_saved') return `Version ${String(m.version)}`;
+  if (
+    entry.action === 'workflow.paused' &&
+    typeof m.cancelledRuns === 'number' &&
+    m.cancelledRuns
+  ) {
+    return `${m.cancelledRuns} queued ${m.cancelledRuns === 1 ? 'run' : 'runs'} cancelled`;
+  }
   return null;
 }
 
@@ -66,7 +84,7 @@ export default function AuditPage() {
     <>
       <PageHeader
         title="Audit log"
-        description={`Sign-ins, roles and invitations. Times in ${org.timezone.replaceAll('_', ' ')}`}
+        description={`Sign-ins, roles, invitations and workflow changes. Times in ${org.timezone.replaceAll('_', ' ')}`}
       />
       <Card>
         {error ? <p role="alert">{error}</p> : null}

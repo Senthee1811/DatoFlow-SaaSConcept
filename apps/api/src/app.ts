@@ -39,6 +39,8 @@ import { LeadsController } from './leads/leads.controller.js';
 import { LossReasonsController, PipelinesController } from './leads/pipelines.controller.js';
 import { NotificationsController } from './tasks/notifications.controller.js';
 import { TasksController } from './tasks/tasks.controller.js';
+import { RunQueue } from './workflows/run-queue.js';
+import { WorkflowsController } from './workflows/workflows.controller.js';
 import { AUTH, DB, EMAIL, ENV, LOGGER, REDIS } from './tokens.js';
 
 export interface AppDeps {
@@ -90,6 +92,7 @@ class AppModule {
         LossReasonsController,
         TasksController,
         NotificationsController,
+        WorkflowsController,
       ],
       providers: [
         { provide: ENV, useValue: deps.env },
@@ -98,6 +101,7 @@ class AppModule {
         { provide: EMAIL, useValue: deps.email },
         { provide: LOGGER, useValue: deps.logger },
         { provide: AUTH, useValue: deps.auth },
+        RunQueue,
         { provide: APP_GUARD, useClass: AccessGuard },
         { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
         { provide: APP_FILTER, useClass: ProblemFilter },

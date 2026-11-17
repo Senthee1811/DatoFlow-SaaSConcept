@@ -38,6 +38,8 @@ interface World {
     stageId: string;
     taskId: string;
     notificationId: string;
+    workflowId: string;
+    executionId: string;
   };
 }
 
@@ -78,8 +80,54 @@ const leadCase = (body?: unknown) => async (w: World, op: Op) => {
   expect(await leadB(w)).toMatchObject({ name: w.b.leadName, archivedAt: null });
 };
 
+async function workflowB(w: World) {
+  const { rows } = await app.sql.query(
+    'SELECT name, status, "latestVersion" FROM "Workflow" WHERE id = $1',
+    [w.b.workflowId],
+  );
+  return rows[0] as { name: string; status: string; latestVersion: number };
+}
+
+/** A's path with B's workflow: 404, and B's workflow is unchanged. */
+const workflowCase = (body?: unknown) => async (w: World, op: Op) => {
+  const res = await w.a.owner.request(
+    op.method,
+    fill(op.path, { orgId: w.a.orgId, workflowId: w.b.workflowId }),
+    body,
+  );
+  expect(res.status, `${op.method} ${op.path}`).toBe(404);
+  expect(await workflowB(w)).toEqual({ name: 'Tenant B flow', status: 'ACTIVE', latestVersion: 1 });
+};
+
+/** A's path with B's run: 404, and B's run is unchanged. */
+const executionCase = async (w: World, op: Op) => {
+  const res = await w.a.owner.request(
+    op.method,
+    fill(op.path, { orgId: w.a.orgId, executionId: w.b.executionId }),
+    op.method === 'POST' ? {} : undefined,
+  );
+  expect(res.status, `${op.method} ${op.path}`).toBe(404);
+  const { rows } = await app.sql.query(
+    'SELECT status, "manualRetries" FROM "WorkflowExecution" WHERE id = $1',
+    [w.b.executionId],
+  );
+  expect(rows[0]).toEqual({ status: 'DEAD', manualRetries: 0 });
+};
+
 /** Cases for routes with an id parameter other than orgId: A's path, B's id. */
 const NESTED: Record<string, (w: World, op: Op) => Promise<void>> = {
+  'GET /v1/orgs/{orgId}/workflows/{workflowId}': workflowCase(),
+  'POST /v1/orgs/{orgId}/workflows/{workflowId}/versions': workflowCase({
+    name: 'Hijacked',
+    definition: {
+      trigger: 'lead.created',
+      actions: [{ type: 'notify', to: 'admins', message: 'Planted' }],
+    },
+  }),
+  'POST /v1/orgs/{orgId}/workflows/{workflowId}/activate': workflowCase({}),
+  'POST /v1/orgs/{orgId}/workflows/{workflowId}/pause': workflowCase({}),
+  'GET /v1/orgs/{orgId}/executions/{executionId}': executionCase,
+  'POST /v1/orgs/{orgId}/executions/{executionId}/retry': executionCase,
   'GET /v1/orgs/{orgId}/leads/{leadId}': leadCase(),
   'PATCH /v1/orgs/{orgId}/leads/{leadId}': leadCase({ name: 'Hijacked' }),
   'POST /v1/orgs/{orgId}/leads/{leadId}/archive': leadCase({}),
@@ -251,6 +299,26 @@ beforeAll(async () => {
   if (task.status !== 201) throw new Error(`task create failed: ${task.status}`);
   // B's owner was notified when B's rep joined (NOT-01).
   const notifications = await ownerB.client.get(`/v1/orgs/${orgB.id}/notifications`);
+  // An active workflow with a DEAD run, which B could retry.
+  const flow = await ownerB.client.post(`/v1/orgs/${orgB.id}/workflows`, {
+    name: 'Tenant B flow',
+    definition: {
+      trigger: 'lead.created',
+      actions: [{ type: 'notify', to: 'admins', message: 'New lead' }],
+    },
+  });
+  if (flow.status !== 201)
+    throw new Error(`workflow create failed: ${flow.status} ${JSON.stringify(flow.body)}`);
+  await ownerB.client.post(`/v1/orgs/${orgB.id}/workflows/${flow.body.id}/activate`);
+  const { rows: runs } = await app.sql.query(
+    `INSERT INTO "WorkflowExecution"
+       (id, "organizationId", "workflowId", "versionId", "eventId", "eventType", "leadId", status,
+        attempt, error, "finishedAt", "updatedAt")
+     VALUES (gen_random_uuid()::text, $1, $2, $3, gen_random_uuid()::text, 'lead.created', $4,
+        'DEAD', 5, 'Tenant B failure', now(), now())
+     RETURNING id`,
+    [orgB.id, flow.body.id, flow.body.versions[0].id, lead.body.id],
+  );
   world = {
     a: { owner: ownerA.client, orgId: orgA.id, userId: ownerA.userId },
     b: {
@@ -267,6 +335,8 @@ beforeAll(async () => {
       stageId: pipelines.body.items[0].stages[0].id,
       taskId: task.body.id,
       notificationId: notifications.body.items[0].id,
+      workflowId: flow.body.id,
+      executionId: runs[0].id,
     },
   };
   const doc = (await new Client(app).get('/v1/openapi.json')).body as {
@@ -308,6 +378,8 @@ describe('NFR-SEC-01 cross-tenant suite', () => {
         pipelineId: world.b.pipelineId,
         taskId: world.b.taskId,
         notificationId: world.b.notificationId,
+        workflowId: world.b.workflowId,
+        executionId: world.b.executionId,
       };
       const res = await call(world.a.owner, op, params);
       if (res.status !== 404) failures.push(`${op.method} ${op.path} → ${res.status}`);
@@ -381,6 +453,32 @@ describe('NFR-SEC-01 references across organizations', () => {
     expect(tasks.body.items.map((t: { id: string }) => t.id)).not.toContain(world.b.taskId);
     const day = await world.a.owner.get(`/v1/orgs/${world.a.orgId}/me/day`);
     expect(JSON.stringify(day.body)).not.toContain(world.b.leadId);
+  });
+
+  it("NFR-SEC-01: a workflow cannot name another organization's stage or member, and lists stay apart", async () => {
+    const res = await world.a.owner.post(`/v1/orgs/${world.a.orgId}/workflows`, {
+      name: 'Cross refs',
+      definition: {
+        trigger: 'lead.created',
+        conditions: [{ field: 'stage', operator: 'is', values: [world.b.stageId] }],
+        actions: [
+          { type: 'assign', mode: 'user', userIds: [world.b.memberUserId] },
+          { type: 'update_field', field: 'stage', value: world.b.stageId },
+        ],
+      },
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.errors.map((e: { path: string }) => e.path).sort()).toEqual([
+      'body.definition.actions.0.userIds',
+      'body.definition.actions.1.value',
+      'body.definition.conditions.0.values',
+    ]);
+    const flows = await world.a.owner.get(`/v1/orgs/${world.a.orgId}/workflows`);
+    expect(flows.body.items.map((f: { id: string }) => f.id)).not.toContain(world.b.workflowId);
+    const runs = await world.a.owner.get(
+      `/v1/orgs/${world.a.orgId}/executions?workflowId=${world.b.workflowId}`,
+    );
+    expect(runs.body.items).toEqual([]);
   });
 
   it("NFR-SEC-01: search and filters never return another organization's leads", async () => {

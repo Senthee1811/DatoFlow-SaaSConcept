@@ -69,7 +69,7 @@ export default function NotificationsPage() {
     <>
       <PageHeader
         title="Notifications"
-        description="Reminders 15 minutes before your next steps, and news about your workspace"
+        description="Reminders 15 minutes before your next steps, workflow messages, and news about your workspace"
         actions={
           unread ? (
             <Button variant="secondary" onClick={markAll}>
@@ -145,6 +145,36 @@ function NotificationText({
           className="underline decoration-dotted underline-offset-4"
         >
           {String(p.title)}, {String(p.leadName)}
+        </Link>
+      </span>
+    );
+  }
+  if (n.kind === 'WORKFLOW_MESSAGE') {
+    return (
+      <span>
+        {String(p.message)}{' '}
+        <Link
+          href={`/app/${slug}/leads/${String(p.leadId)}`}
+          onClick={onOpen}
+          className="underline decoration-dotted underline-offset-4"
+        >
+          Open {String(p.leadName)}
+        </Link>
+        <span className="caption text-obsidian/75"> · Workflow: {String(p.workflowName)}</span>
+      </span>
+    );
+  }
+  if (n.kind === 'WORKFLOW_DEAD') {
+    return (
+      <span>
+        Workflow &ldquo;{String(p.workflowName)}&rdquo; gave up
+        {p.leadName ? ` on ${String(p.leadName)}` : ''}: {String(p.error)}.{' '}
+        <Link
+          href={`/app/${slug}/workflows/runs/${String(p.executionId)}`}
+          onClick={onOpen}
+          className="underline decoration-dotted underline-offset-4"
+        >
+          See the run and retry
         </Link>
       </span>
     );

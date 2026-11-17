@@ -4,7 +4,8 @@ import type { Request } from 'express';
 import { clientIp } from '../http/request.js';
 
 /**
- * Audit actions recorded so far. Phase 1 covers auth, organization, role and invitation events.
+ * Audit actions recorded so far: auth, organization, role and invitation events (Phase 1), pipeline
+ * and sample data (Phase 2), and workflow changes and manual retries (Phase 4).
  * The log is append-only and never stores passwords, tokens or full secrets (AUD-01).
  */
 export type AuditAction =
@@ -23,7 +24,13 @@ export type AuditAction =
   | 'invitation.accepted'
   | 'pipeline.updated'
   | 'loss_reasons.updated'
-  | 'sample.deleted';
+  | 'sample.deleted'
+  | 'workflow.created'
+  | 'workflow.version_saved'
+  | 'workflow.activated'
+  | 'workflow.resumed'
+  | 'workflow.paused'
+  | 'workflow.run_retried';
 
 export interface AuditEntry {
   action: AuditAction;

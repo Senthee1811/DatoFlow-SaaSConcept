@@ -12,7 +12,7 @@ import {
   StatusBadge,
   Textarea,
 } from '@datoflow/ui';
-import { ArrowLeft, Copy, PhoneCall } from 'lucide-react';
+import { ArrowLeft, Copy, PhoneCall, Tag } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
@@ -130,6 +130,12 @@ export function LeadDetail({ leadId }: { leadId: string }) {
           <p className="mt-2 flex flex-wrap items-center gap-2 text-obsidian/80">
             {lead.company ? <span>{lead.company}</span> : null}
             <LeadBadges lead={lead} />
+            {lead.tags.map((t) => (
+              <Badge key={t} tone="limestone" className="bg-pumice">
+                <Tag aria-hidden className="size-3.5" strokeWidth={1.75} />
+                {t}
+              </Badge>
+            ))}
           </p>
         </div>
         {canArchive ? (
@@ -359,6 +365,7 @@ const FIELD_LABEL: Record<string, string> = {
   dealValue: 'deal value',
   notes: 'notes',
   utm: 'campaign details',
+  tags: 'tags',
 };
 
 function describe(a: ActivityDto, lookups: Lookups): string {
@@ -398,6 +405,10 @@ function describe(a: ActivityDto, lookups: Lookups): string {
       return `finished: ${String(a.payload.title ?? '')}`;
     case 'TASK_CANCELLED':
       return `cancelled: ${String(a.payload.title ?? '')}`;
+    case 'WORKFLOW_ACTION':
+      return a.payload.action === 'send_email'
+        ? `scheduled an email to the ${a.payload.to === 'lead' ? 'lead' : 'owner'}: ${String(a.payload.subject ?? '')}`
+        : `sent a notification: ${String(a.payload.message ?? '')}`;
     case 'STUCK': {
       const reasons = (a.payload.reasons as string[] | undefined) ?? [];
       const why = [

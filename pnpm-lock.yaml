@@ -202,6 +202,9 @@ importers:
       '@datoflow/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@datoflow/workflow':
+        specifier: workspace:*
+        version: link:../../packages/workflow
       '@nestjs/common':
         specifier: 12.5.0
         version: 12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -220,6 +223,9 @@ importers:
       better-auth:
         specifier: 1.7.25
         version: 1.7.25(@prisma/client@7.10.1(prisma@7.10.1(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(magicast@0.5.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3))(typescript@6.0.3))(mysql2@3.24.4(@types/node@26.6.6))(next@16.4.6(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(pg@8.23.1)(prisma@7.10.1(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(magicast@0.5.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.0)
+      bullmq:
+        specifier: 6.7.6
+        version: 6.7.6(ioredis@5.11.1)(pg@8.23.1)
       express:
         specifier: 5.3.0
         version: 5.3.0
@@ -269,6 +275,9 @@ importers:
       '@datoflow/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@datoflow/workflow':
+        specifier: workspace:*
+        version: link:../../packages/workflow
       '@dnd-kit/core':
         specifier: 6.3.1
         version: 6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -339,6 +348,9 @@ importers:
       '@datoflow/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@datoflow/workflow':
+        specifier: workspace:*
+        version: link:../../packages/workflow
       '@nestjs/common':
         specifier: 12.5.0
         version: 12.5.0(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -445,6 +457,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@datoflow/workflow':
+        specifier: workspace:*
+        version: link:../workflow
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -480,6 +495,21 @@ importers:
       typescript:
         specifier: 6.0.3
         version: 6.0.3
+
+  packages/workflow:
+    devDependencies:
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      '@vitest/coverage-v8':
+        specifier: 5.1.0
+        version: 5.1.0(vitest@5.1.0)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(@vitest/coverage-v8@5.1.0)(vite@8.3.8(@types/node@26.6.6)(jiti@2.7.0)(yaml@2.9.1))
 
   tests:
     dependencies:

@@ -21,6 +21,7 @@ const NAV: NavItem[] = [
   { href: '', label: 'Overview' },
   { href: '/day', label: 'My day' },
   { href: '/leads', label: 'Leads' },
+  { href: '/workflows', label: 'Workflows', capability: 'workflows.manage' },
   { href: '/members', label: 'Members', capability: 'members.manage' },
   { href: '/audit', label: 'Audit log', capability: 'audit.view' },
   { href: '/settings', label: 'Settings', capability: 'org.settings' },

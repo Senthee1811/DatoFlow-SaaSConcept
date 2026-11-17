@@ -31,6 +31,16 @@ export const serverEnvSchema = z
     RADAR_INTERVAL_SECONDS: z.coerce.number().int().min(5).default(300),
     /** Reminder, digest and email run (TASK-04): every minute. */
     REMINDER_INTERVAL_SECONDS: z.coerce.number().int().min(5).default(60),
+    /** Outbox publisher: how often unpublished events are moved to the workflow queue (WF-07). */
+    WORKFLOW_POLL_MS: z.coerce.number().int().min(100).default(1000),
+    /** Workflow sweep: re-queues runs whose worker stopped and retries that lost their job. */
+    WORKFLOW_SWEEP_SECONDS: z.coerce.number().int().min(1).default(60),
+    /** A running attempt not heard from for this long belongs to a worker that stopped. */
+    WORKFLOW_LEASE_SECONDS: z.coerce.number().int().min(2).default(120),
+    /** Delay before the second attempt of a failed run; each later one doubles it (WF-08). */
+    WORKFLOW_RETRY_BASE_MS: z.coerce.number().int().min(10).default(30_000),
+    /** Workflow jobs one worker runs at once. */
+    WORKFLOW_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
     RATE_LIMIT_AUTH_PER_MIN: z.coerce.number().int().positive().default(5),
     RATE_LIMIT_API_PER_MIN: z.coerce.number().int().positive().default(300),
     CAPTCHA_PROVIDER: z.enum(['noop', 'turnstile']).default('noop'),

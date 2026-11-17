@@ -21,7 +21,14 @@ export interface DeliverOptions {
   logger?: Logger;
 }
 
-type Row = { id: string; kind: string; dedupeKey: string | null; payload: unknown; userId: string };
+type Row = {
+  id: string;
+  kind: string;
+  dedupeKey: string | null;
+  payload: unknown;
+  userId: string | null;
+  toAddress?: string | null;
+};
 
 function when(iso: string, timezone: string, withDate: boolean) {
   return new Intl.DateTimeFormat('en-GB', {
@@ -47,6 +54,10 @@ export function compose(row: Row, to: string, appUrl: string): EmailMessage {
   const base = `${appUrl}/app/${String(p.orgSlug)}`;
   const footer = `\n\nChange reminder emails on your Account page: ${base}/account`;
   const key = row.dedupeKey ? { idempotencyKey: row.dedupeKey } : {};
+  if (row.kind === KIND.WORKFLOW_EMAIL) {
+    // Subject and body were filled in when the workflow action ran.
+    return { to, subject: String(p.subject), text: String(p.body), ...key };
+  }
   if (row.kind === KIND.DUE_SOON) {
     const company = p.leadCompany ? `, ${String(p.leadCompany)}` : '';
     return {
@@ -141,13 +152,18 @@ export async function deliverEmails(
           dedupeKey: true,
           payload: true,
           userId: true,
+          toAddress: true,
           organizationId: true,
           staleAt: true,
         },
       }),
     );
-  // Daily digests go first, then reminders.
-  const rows = [...(await waiting(KIND.DIGEST)), ...(await waiting(KIND.DUE_SOON))];
+  // Daily digests go first, then reminders, then emails scheduled by workflows.
+  const rows = [
+    ...(await waiting(KIND.DIGEST)),
+    ...(await waiting(KIND.DUE_SOON)),
+    ...(await waiting(KIND.WORKFLOW_EMAIL)),
+  ];
 
   for (const row of rows) {
     if (row.staleAt && row.staleAt.getTime() <= now.getTime()) {
@@ -180,14 +196,18 @@ export async function deliverEmails(
         data: { status: 'SENDING', claimedAt: now, attempts: { increment: 1 } },
       });
       if (count !== 1) return null;
-      const member = await tx.organizationMembership.findFirst({
-        where: { organizationId: row.organizationId, userId: row.userId, isSample: false },
-        select: { user: { select: { email: true } } },
-      });
       const fresh = await tx.notification.findUniqueOrThrow({
         where: { id: row.id },
         select: { attempts: true },
       });
+      // An address outside the workspace (a lead's) is used as given.
+      if (row.toAddress) return { to: row.toAddress, attempts: fresh.attempts };
+      const member = row.userId
+        ? await tx.organizationMembership.findFirst({
+            where: { organizationId: row.organizationId, userId: row.userId, isSample: false },
+            select: { user: { select: { email: true } } },
+          })
+        : null;
       return { to: member?.user.email ?? null, attempts: fresh.attempts };
     });
     if (!claim) continue; // Another worker has it.

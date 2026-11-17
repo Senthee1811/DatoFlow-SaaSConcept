@@ -1,5 +1,48 @@
 # Status
 
+## Phase 4 — Workflow engine (2026-11-17)
+
+**Gate result: pass locally; GitHub Actions not yet run.** Everything below ran on Docker Desktop for Windows: the unit and integration suites, and the full E2E suite against the Compose stack.
+
+| Gate check                                 | Result     | How it was run                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UF-3 E2E passes                            | Pass       | `tests/e2e/uf-3.spec.ts`: a workflow built and activated in the builder; a matching lead runs it (SUCCEEDED, both steps done, "Workflow: Website leads" on the timeline); a lead from another source is SKIPPED; a run whose lead has no email goes DEAD at once and the Owner is notified; after the fix, Retry succeeds; pause. axe on every new screen |
+| Replay test passes                         | Pass       | `tests/integration/workflows.test.ts`, WF-07: the same event dispatched again and published again through the queue creates no second execution and no second task; a finished run run again does nothing; a step that committed is not repeated when a later step fails                                                                                  |
+| Kill-the-worker test passes                | Pass       | `tests/integration/worker-kill.test.ts`: the production worker build runs as a child process with 30 ten-step runs and is killed with SIGKILL partway through; a new worker finishes all 30, with exactly 5 tasks and 5 notifications per lead and 300 step rows. Passed 3 runs in a row                                                                  |
+| ≥ 80% line coverage on `packages/workflow` | Pass: 100% | `pnpm --filter @datoflow/workflow test` (coverage gate in its Vitest config)                                                                                                                                                                                                                                                                              |
+
+### Requirements done
+
+| ID    | Tests (names start with the ID)                                                                                                                                                                                                                                                      |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| WF-01 | Versions are immutable (API and a database trigger); an active workflow runs each new version; 1 to 10 actions; unknown triggers refused; Sales Reps get 403                                                                                                                         |
+| WF-02 | A fixture per trigger: `lead.created`, `lead.stage_changed`, `lead.assigned`, `task.deadline_reached` (once per due time)                                                                                                                                                            |
+| WF-03 | Source, stage, assignee (including the unassigned pool) and priority with is, is any of, is none of; false conditions record SKIPPED                                                                                                                                                 |
+| WF-04 | Assign (one member, round-robin in turn), create task, schedule email (delivered with placeholders filled), notify, update priority, stage, owner and tags, all as "Workflow: name"; fields outside the allow-list, closed stages, outsiders and delays over 30 days refused on save |
+| WF-05 | Pausing cancels queued and waiting runs; a queued run picked up after a pause is CANCELLED; resume; the active-workflow limit (402) with sample workflows not counted                                                                                                                |
+| WF-06 | Log with status, attempts, steps and errors; filters; retry only FAILED or DEAD (409 otherwise, and while paused); retried runs skip finished steps                                                                                                                                  |
+| WF-07 | Replayed event: no second execution or side effect                                                                                                                                                                                                                                   |
+| WF-08 | Transient failure retried with backoff; DEAD after the 5th attempt with Owners and Admins notified (Reps not); validation errors fail fast                                                                                                                                           |
+| WF-09 | Depth 3 runs, depth 4 SKIPPED; a chain of workflows carries depth; no self-trigger; monthly plan cap SKIPPED with the reason                                                                                                                                                         |
+
+Also done: the 2 sample workflows of ORG-04 (deferred from Phase 2), the outbox publisher (deferred from Phase 2), cross-tenant cases for the 8 new routes and for workflows that name another organization's stage or member.
+
+### Tests added
+
+- Unit: `packages/workflow` has 28 tests (100% line coverage); domain still 104.
+- Integration: 123 in total (26 new: 24 workflow tests, the kill-the-worker test, a cross-tenant reference test).
+- E2E: UF-3 added; 14 runs in total pass on desktop and phone.
+
+### Found and fixed while running the gate
+
+- The Dockerfile did not copy the new package's manifest, so the image build would have failed in CI.
+- "Delete sample data" could deadlock with sample workflows running on the same leads: it now deletes workflows before leads (the lock order a run uses) and retries once on a deadlock. Sample steps already overdue at seeding no longer start a burst of runs.
+
+### Deferred
+
+- Email to Admins for a DEAD run waits for notification preferences (Phase 6); the in-app notification is in place.
+- Usage counters for runs (BILL-02) arrive in Phase 6; the monthly cap counts the run log directly for now.
+
 ## Phase 3 — Tasks and the next-step rule (2026-11-17)
 
 **Gate result: pass on GitHub Actions** — [CI run 44022095532](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/44022095532) (lint, types, unit tests with coverage, build, integration and cross-tenant suite including the reminder restart tests, linux/arm64 images) and [E2E run 44022095570](https://github.com/Senthee1811/DatoFlow-SaaSConcept/actions/runs/44022095570) (UF-2, UF-8 and the earlier flows against a fresh no-secrets Compose stack, desktop and phone). It also passed locally first, on Docker Desktop for Windows.

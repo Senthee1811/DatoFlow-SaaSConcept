@@ -252,6 +252,8 @@ export interface LeadDto extends LeadSummaryDto {
   stageEnteredAt: string;
   closedAt: string | null;
   duplicates: DuplicateDto[];
+  /** Lower-case labels, set by workflows (WF-04). */
+  tags: string[];
   canEdit: boolean;
 }
 

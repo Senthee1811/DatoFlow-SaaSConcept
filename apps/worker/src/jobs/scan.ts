@@ -15,6 +15,8 @@ import {
 export const KIND = {
   DUE_SOON: 'TASK_DUE_SOON',
   DIGEST: 'DAILY_DIGEST',
+  /** An email scheduled by a workflow action, to a lead or a member (WF-04). */
+  WORKFLOW_EMAIL: 'WORKFLOW_EMAIL',
 } as const;
 
 interface MemberPrefs {

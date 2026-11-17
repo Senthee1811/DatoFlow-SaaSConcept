@@ -195,6 +195,7 @@ model Organization {
   lossReasons   LossReason[]
   tasks         Task[]
   notifications Notification[]
+  workflows     Workflow[]
 }
 
 model OrganizationMembership {
@@ -331,6 +332,8 @@ model Lead {
   nextStepDueAt   DateTime?
   /// When the stuck-lead radar flagged the lead. Cleared when it recovers.
   stuckAt         DateTime?
+  /// Lower-case labels. Workflows can add or remove them (WF-04).
+  tags            String[]   @default([])
   closedAt        DateTime?
   archivedAt      DateTime?
   createdAt       DateTime   @default(now())
@@ -358,20 +361,22 @@ model Lead {
 
 /// A task on a lead (TASK-01). An open one with a due time and an assignee is a next step.
 model Task {
-  id             String     @id @default(uuid())
-  organizationId String
-  leadId         String
-  title          String
-  type           TaskType
-  dueAt          DateTime
-  priority       Priority   @default(NORMAL)
+  id              String     @id @default(uuid())
+  organizationId  String
+  leadId          String
+  title           String
+  type            TaskType
+  dueAt           DateTime
+  priority        Priority   @default(NORMAL)
   /// A member of the organization. Null only when the person's account was deleted.
-  assigneeId     String?
-  status         TaskStatus @default(OPEN)
-  completedAt    DateTime?
-  createdById    String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  assigneeId      String?
+  status          TaskStatus @default(OPEN)
+  completedAt     DateTime?
+  /// The due time for which `task.deadline_reached` was raised, so each deadline raises one event.
+  deadlineEventAt DateTime?
+  createdById     String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
@@ -387,7 +392,10 @@ model Task {
 model Notification {
   id             String              @id @default(uuid())
   organizationId String
-  userId         String
+  /// The member it is for. Null only for a workflow email to a lead, which uses `toAddress`.
+  userId         String?
+  /// Email only: an address outside the workspace, such as a lead's (WF-04).
+  toAddress      String?
   kind           String
   channel        NotificationChannel
   payload        Json                @default("{}")
@@ -405,7 +413,7 @@ model Notification {
   createdAt      DateTime            @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, userId, readAt])
   @@index([status, sendAfter])
@@ -460,7 +468,9 @@ model StageHistory {
   @@index([leadId])
 }
 
-/// Written in the same transaction as the change it describes. The worker publishes it (Phase 4).
+/// Written in the same transaction as the change it describes. The worker publishes it to BullMQ.
+/// `depth` counts the workflow runs between a person's change and this event; `causationId` is
+/// the run that raised it (WF-09).
 model OutboxEvent {
   id             String    @id @default(uuid())
   organizationId String
@@ -474,4 +484,127 @@ model OutboxEvent {
   publishedAt    DateTime?
 
   @@index([organizationId, createdAt])
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+}
+
+enum ExecutionStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  SKIPPED
+  CANCELLED
+  FAILED
+  DEAD
+}
+
+enum StepStatus {
+  SUCCEEDED
+  FAILED
+}
+
+/// A workflow (WF-01). Its rules live in immutable versions; the active one runs.
+model Workflow {
+  id               String         @id @default(uuid())
+  organizationId   String
+  name             String
+  status           WorkflowStatus @default(DRAFT)
+  activeVersionId  String?
+  latestVersion    Int            @default(0)
+  /// Round-robin picks made so far (WF-04).
+  roundRobinCursor Int            @default(0)
+  isSample         Boolean        @default(false)
+  createdById      String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  versions     WorkflowVersion[]
+  executions   WorkflowExecution[]
+
+  @@index([organizationId, status])
+}
+
+/// One saved definition of a workflow. Never updated: a database trigger refuses it (WF-01).
+model WorkflowVersion {
+  id             String   @id @default(uuid())
+  organizationId String
+  workflowId     String
+  version        Int
+  trigger        String
+  conditions     Json
+  actions        Json
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  workflow   Workflow            @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  executions WorkflowExecution[]
+
+  @@unique([workflowId, version])
+  @@index([organizationId, trigger])
+}
+
+/// One run of one workflow version for one event. Unique per version and event (WF-07).
+model WorkflowExecution {
+  id             String          @id @default(uuid())
+  organizationId String
+  workflowId     String
+  versionId      String
+  eventId        String
+  eventType      String
+  /// The lead the event is about. Not a foreign key: the log outlives deleted sample leads.
+  leadId         String?
+  status         ExecutionStatus
+  /// Attempts started, including one cut short by a worker that stopped.
+  attempt        Int             @default(0)
+  /// Depth of the triggering event (WF-09).
+  depth          Int             @default(0)
+  isSample       Boolean         @default(false)
+  skipReason     String?
+  error          String?
+  /// VALIDATION, PERMISSION, NOT_FOUND or TRANSIENT.
+  errorKind      String?
+  nextAttemptAt  DateTime?
+  /// When the running attempt started. A stale claim belongs to a worker that stopped.
+  claimedAt      DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  manualRetries  Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  workflow Workflow                @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  version  WorkflowVersion         @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  steps    WorkflowExecutionStep[]
+
+  @@unique([versionId, eventId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, workflowId, createdAt])
+  @@index([organizationId, status])
+  @@index([status, nextAttemptAt])
+}
+
+/// One action of a run. Written in the same transaction as the action's effect, so a step that
+/// succeeded is never repeated (WF-07: keyed by execution and step index).
+model WorkflowExecutionStep {
+  id             String     @id @default(uuid())
+  organizationId String
+  executionId    String
+  stepIndex      Int
+  actionType     String
+  status         StepStatus
+  /// The attempt that wrote this result.
+  attempt        Int
+  result         Json?
+  error          String?
+  finishedAt     DateTime   @default(now())
+
+  execution WorkflowExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, stepIndex])
+  @@index([organizationId, executionId])
 }

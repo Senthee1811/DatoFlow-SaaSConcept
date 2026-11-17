@@ -125,7 +125,12 @@ export interface TouchResultDto {
   warning: 'NEXT_STEP_MISSING' | null;
 }
 
-export const NOTIFICATION_KINDS = ['TASK_DUE_SOON', 'MEMBER_JOINED'] as const;
+export const NOTIFICATION_KINDS = [
+  'TASK_DUE_SOON',
+  'MEMBER_JOINED',
+  'WORKFLOW_MESSAGE',
+  'WORKFLOW_DEAD',
+] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export interface NotificationDto {

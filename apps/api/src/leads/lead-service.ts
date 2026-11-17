@@ -189,6 +189,7 @@ export async function toLeadDto(tx: Tx, member: Member, lead: LeadRow): Promise<
     stageEnteredAt: lead.stageEnteredAt.toISOString(),
     closedAt: lead.closedAt?.toISOString() ?? null,
     duplicates,
+    tags: lead.tags ?? [],
     canEdit: canEditLead(member.role, member.userId, lead),
   };
 }

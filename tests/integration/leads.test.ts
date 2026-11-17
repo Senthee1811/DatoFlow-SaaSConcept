@@ -656,7 +656,7 @@ describe('ORG-04 sample workspace', () => {
 
     const res = await ws.owner.delete(`/v1/orgs/${ws.orgId}/sample-data`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ leads: 60, reps: 3 });
+    expect(res.body).toEqual({ leads: 60, reps: 3, workflows: 2 });
 
     const { rows } = await app.sql.query(
       `SELECT name, "ownerId" FROM "Lead" WHERE "organizationId" = $1 ORDER BY name`,
@@ -681,7 +681,7 @@ describe('ORG-04 sample workspace', () => {
     const audit = await ws.owner.get(`/v1/orgs/${ws.orgId}/audit-logs`);
     expect(audit.body.items[0]).toMatchObject({
       action: 'sample.deleted',
-      metadata: { leads: 60, reps: 3 },
+      metadata: { leads: 60, reps: 3, workflows: 2 },
     });
   });
 

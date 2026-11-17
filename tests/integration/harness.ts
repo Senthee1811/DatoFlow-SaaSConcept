@@ -1,6 +1,6 @@
 import type { EmailAdapter, EmailMessage } from '@datoflow/adapters';
 import { createApp } from '@datoflow/api';
-import { createWorker } from '@datoflow/worker';
+import { createWorker, type CreateWorkerOptions } from '@datoflow/worker';
 import { loadServerEnv, type ServerEnv } from '@datoflow/shared';
 import type { AddressInfo } from 'node:net';
 import pg from 'pg';
@@ -240,6 +240,7 @@ export async function startWorker(
   app: TestApp,
   overrides: Record<string, string> = {},
   email: EmailAdapter & { sent?: EmailMessage[] } = new Outbox(),
+  options: Pick<CreateWorkerOptions, 'faults' | 'random'> = {},
 ): Promise<TestWorker> {
   const env = loadServerEnv({
     ...Object.fromEntries(
@@ -253,6 +254,7 @@ export async function startWorker(
   });
   const worker = await createWorker(env, {
     email,
+    ...options,
     ...(process.env.TEST_LOG_LEVEL ? { logLevel: process.env.TEST_LOG_LEVEL } : {}),
   });
   return Object.assign(worker, { outbox: email as Outbox });
@@ -261,4 +263,24 @@ export async function startWorker(
 /** An ISO time `minutes` from now. */
 export function inMinutes(minutes: number, from = new Date()) {
   return new Date(from.getTime() + minutes * 60_000).toISOString();
+}
+
+/** Polls `check` until it returns a truthy value, or fails after `timeoutMs`. */
+export async function waitFor<T>(
+  check: () => Promise<T | null | undefined | false>,
+  what: string,
+  timeoutMs = 20_000,
+): Promise<T> {
+  const until = Date.now() + timeoutMs;
+  let last: unknown;
+  while (Date.now() < until) {
+    try {
+      const value = await check();
+      if (value) return value;
+    } catch (err) {
+      last = err;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`Timed out waiting for ${what}${last ? `: ${String(last)}` : ''}`);
 }
